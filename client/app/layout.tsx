@@ -2,13 +2,12 @@ import './globals.css';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { Providers } from '../components/providers';
-import Navbar from '../components/Navbar';
 
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Whisper - Anonymous Stealth Messaging',
-  description: 'Send anonymous messages using stealth addresses on Base Sepolia',
+  title: 'Stealth Messaging - Anonymous Communication',
+  description: 'Send and receive anonymous messages using stealth addresses on Base Sepolia',
 };
 
 export default function RootLayout({
@@ -20,7 +19,6 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <Providers>
-          <Navbar />
           {children}
         </Providers>
       </body>

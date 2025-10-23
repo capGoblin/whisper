@@ -1,43 +1,62 @@
 import { PublicClient } from 'viem';
-import { getAnnouncements, parseAnnouncementEvent } from './fetch-announcements';
-import { UserKeys, Message } from '../types';
+import { getAnnouncementsForUserOfficial } from './stealth-sdk-official';
+import { UserKeys, DecryptedMessage } from '../types';
+import { computeSharedSecret, decryptMetadata, checkViewTagMatch, extractViewTag } from './encryption';
 
 /**
- * Simple message scanning - no encryption, just read metadata directly
+ * Scan for encrypted messages using official SDK and decrypt them
  */
 export const scanForSimpleMessages = async (
   publicClient: PublicClient,
   userKeys: UserKeys
-): Promise<Message[]> => {
+): Promise<DecryptedMessage[]> => {
   try {
-    console.log('Scanning for simple messages...');
+    console.log('Scanning for encrypted messages...');
     
-    // Fetch all announcements from the blockchain
-    const announcements = await getAnnouncements(publicClient);
-    console.log(`Found ${announcements.length} announcements`);
+    // Use official SDK to get announcements for this user
+    const announcements = await getAnnouncementsForUserOfficial(userKeys);
+    console.log(`Found ${announcements.length} announcements for user`);
     
-    const messages: Message[] = [];
+    const messages: DecryptedMessage[] = [];
     
     for (const announcement of announcements) {
       try {
-        const parsedEvent = parseAnnouncementEvent(announcement);
-        if (!parsedEvent) continue;
+        const { stealthAddress, ephemeralPubKey, metadata } = announcement;
         
-        const { stealthAddress, ephemeralPubKey, metadata } = parsedEvent;
+        // Compute shared secret for this announcement
+        const sharedSecret = computeSharedSecret(
+          userKeys.viewingPrivateKey,
+          ephemeralPubKey
+        );
         
-        // For simple messaging, we just read the metadata directly
-        // No encryption/decryption needed
-        const messageContent = metadata; // This is just the plain message
+        // Extract view tag for quick filtering
+        const expectedViewTag = extractViewTag(sharedSecret);
         
-        const message: Message = {
-          from: 'Anonymous',
-          content: messageContent,
-          timestamp: Date.now(),
-          stealthAddress: stealthAddress
-        };
+        // Check if view tag matches (quick filter)
+        if (!checkViewTagMatch(metadata, expectedViewTag)) {
+          console.log('View tag mismatch, skipping announcement');
+          continue;
+        }
         
-        messages.push(message);
-        console.log('Found simple message:', messageContent);
+        // Attempt to decrypt the message
+        const decryptedContent = await decryptMetadata(metadata, sharedSecret);
+        
+        if (decryptedContent) {
+          const message: DecryptedMessage = {
+            from: 'Anonymous',
+            content: decryptedContent,
+            timestamp: Date.now(),
+            stealthAddress: stealthAddress,
+            decryptionSuccess: true,
+            sharedSecret: sharedSecret,
+            viewTag: expectedViewTag
+          };
+          
+          messages.push(message);
+          console.log('Successfully decrypted message:', decryptedContent);
+        } else {
+          console.log('Failed to decrypt message, skipping');
+        }
         
       } catch (error) {
         console.error('Error processing announcement:', error);
@@ -45,11 +64,11 @@ export const scanForSimpleMessages = async (
       }
     }
     
-    console.log(`Found ${messages.length} simple messages for user`);
+    console.log(`Successfully decrypted ${messages.length} messages for user`);
     return messages;
     
   } catch (error) {
-    console.error('Error scanning for simple messages:', error);
+    console.error('Error scanning for encrypted messages:', error);
     throw new Error(`Failed to scan for messages: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
@@ -96,3 +115,5 @@ export const clearUserKeys = (): void => {
     console.error('Error clearing user keys:', error);
   }
 };
+
+
