@@ -8,7 +8,11 @@ import {
   TopicCreateTransaction,
   TopicMessageSubmitTransaction,
   AccountId,
+  ContractCallQuery,
+  ContractExecuteTransaction,
+  ContractFunctionParameters,
 } from "@hashgraph/sdk";
+import { REGISTRY_ADDRESS } from "../constants/contracts";
 
 /**
  * Scan for messages using Hashinal WC SDK
@@ -125,7 +129,7 @@ export const sendMessage = async (
     console.log(`Message submitted to topic ${topicId}`);
 
     return {
-      transactionId: submitMessageReceipt.status?.toString() || "unknown",
+      transactionId: submitMessageReceipt.status?.toString() || "PPunknown",
       success: true,
     };
   } catch (error) {
@@ -136,7 +140,7 @@ export const sendMessage = async (
 
 /**
  * Register meta-address using Hashinal WC SDK
- * Based on the Hashinal WC implementation from the gist
+ * Makes a direct transaction to the registry contract
  */
 export const registerMetaAddress = async (
   sdk: HashinalsWalletConnectSDK,
@@ -155,37 +159,46 @@ export const registerMetaAddress = async (
 
     console.log("Registering meta-address using Hashinal WC SDK...");
 
-    // Create a topic for meta-address registration
-    const createTopicTx = new TopicCreateTransaction()
-      .setTopicMemo(`Meta-address registration: ${metaAddress}`)
-      .setAutoRenewAccountId(accountInfo.accountId);
+    // Extract the public keys from the meta-address (remove 'st:eth:' prefix)
+    const publicKeysHex = metaAddress.startsWith("st:eth:")
+      ? metaAddress.slice(7) // Remove 'st:eth:' prefix
+      : metaAddress;
 
-    // Execute topic creation for registration
-    const createTopicReceipt = await sdk.executeTransaction(createTopicTx);
-    const topicId = createTopicReceipt.topicId;
+    // Create contract function parameters for registerKeys
+    console.log(
+      `Registering meta-address to registry contract: ${REGISTRY_ADDRESS}`
+    );
+    console.log(`Public keys data: ${publicKeysHex}`);
 
-    if (!topicId) {
-      throw new Error("Failed to create registration topic");
-    }
+    // The registry contract's registerKeys function signature is:
+    // registerKeys(uint256 schemeId, bytes calldata stealthMetaAddress)
+    const params = new ContractFunctionParameters()
+      .addUint256(1) // schemeId = 1 for ERC-5564
+      .addBytes(new Uint8Array(Buffer.from(publicKeysHex, "hex"))); // Convert hex string to Uint8Array
 
-    // Submit meta-address to the topic
-    const registrationContent = {
-      type: "meta-address-registration",
-      metaAddress: metaAddress,
-      accountId: accountInfo.accountId,
-      timestamp: Date.now(),
-    };
+    // For Hedera, we need to use the contract ID format
+    // The REGISTRY_ADDRESS is an Ethereum address, but Hedera needs a different format
+    // We need to find the actual Hedera contract ID for the registry
+    // For now, let's use a placeholder - in production, you'd need the real contract ID
+    const hederaContractId = "0.0.123456"; // TODO: Replace with actual Hedera contract ID
 
-    const submitRegistrationTx = new TopicMessageSubmitTransaction()
-      .setTopicId(topicId)
-      .setMessage(JSON.stringify(registrationContent));
+    console.log(`Using Hedera contract ID: ${hederaContractId}`);
+    console.log(`Original Ethereum address: ${REGISTRY_ADDRESS}`);
 
-    const submitReceipt = await sdk.executeTransaction(submitRegistrationTx);
+    // Execute the smart contract function using the SDK
+    const result = await sdk.executeSmartContract(
+      hederaContractId, // Hedera contract ID
+      "registerKeys", // function name
+      params, // parameters
+      200000 // gas limit
+    );
 
-    console.log(`Meta-address registered in topic ${topicId}`);
+    console.log(
+      `Meta-address registered with transaction: ${result.status || "unknown"}`
+    );
 
     return {
-      transactionId: submitReceipt.status?.toString() || "unknown",
+      transactionId: result.status?.toString() || "unknown",
       success: true,
     };
   } catch (error) {

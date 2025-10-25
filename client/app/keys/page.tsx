@@ -1,38 +1,71 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { useWallet } from '@/providers/WalletProvider';
-import { useMutation } from '@tanstack/react-query';
-import toast from 'react-hot-toast';
-import { Button } from '../../components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
-import { Badge } from '../../components/ui/badge';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import { Key, Copy, Download, QrCode, Shield, AlertTriangle, CheckCircle, ExternalLink, Eye, EyeOff, RotateCcw } from 'lucide-react';
-import EmptyState from '../components/shared/EmptyState';
-import LoadingSpinner from '../components/shared/LoadingSpinner';
-import StatusBadge from '../components/shared/StatusBadge';
-import CopyButton from '../components/shared/CopyButton';
-import ConfirmDialog from '../components/shared/ConfirmDialog';
+import React, { useState, useEffect } from "react";
+import { useWallet } from "@/providers/WalletProvider";
+import { useMutation } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import { Button } from "../../components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card";
+import { Badge } from "../../components/ui/badge";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import {
+  Key,
+  Copy,
+  Download,
+  QrCode,
+  Shield,
+  AlertTriangle,
+  CheckCircle,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  RotateCcw,
+} from "lucide-react";
+import EmptyState from "../components/shared/EmptyState";
+import LoadingSpinner from "../components/shared/LoadingSpinner";
+import StatusBadge from "../components/shared/StatusBadge";
+import CopyButton from "../components/shared/CopyButton";
+import ConfirmDialog from "../components/shared/ConfirmDialog";
 
 // Utils
-import { setupPassKeys, generateStealthKeys, createStealthMetaAddress, getUserKeys, storeUserKeys } from '../../utils/pass-keys-simple';
-import { generateTestKeys, createTestStealthMetaAddress, storeTestKeys } from '../../utils/pass-keys-fallback';
-import { registerMetaAddressWithMetaMask, waitForTransactionConfirmation } from '../../utils/registry-metamask';
+import {
+  setupPassKeys,
+  generateStealthKeys,
+  createStealthMetaAddress,
+  getUserKeys,
+  storeUserKeys,
+} from "../../utils/pass-keys-simple";
+import {
+  generateTestKeys,
+  createTestStealthMetaAddress,
+  storeTestKeys,
+} from "../../utils/pass-keys-fallback";
+import {
+  registerMetaAddressWithWalletConnect,
+  waitForTransactionConfirmationWithWalletConnect,
+} from "../../utils/registry-metamask";
 
 // Types
-import { UserKeys, RegistryStatus, HederaTransactionState } from '../../types';
+import { UserKeys, RegistryStatus, HederaTransactionState } from "../../types";
 
 export default function KeysPage() {
-  const { connect, disconnect, accountId, isConnecting } = useWallet();
-  
+  const { connect, disconnect, accountId, isConnecting, sdk } = useWallet();
+
   // State
   const [userKeys, setUserKeys] = useState<UserKeys | null>(null);
-  const [metaAddress, setMetaAddress] = useState<string>('');
-  const [registryStatus, setRegistryStatus] = useState<RegistryStatus>('not-registered');
+  const [metaAddress, setMetaAddress] = useState<string>("");
+  const [registryStatus, setRegistryStatus] =
+    useState<RegistryStatus>("not-registered");
   const [showPrivateKeys, setShowPrivateKeys] = useState(false);
-  const [registerTxState, setRegisterTxState] = useState<HederaTransactionState>({ status: 'idle' });
+  const [registerTxState, setRegisterTxState] =
+    useState<HederaTransactionState>({ status: "idle" });
 
   // Load existing keys on mount
   useEffect(() => {
@@ -75,19 +108,19 @@ export default function KeysPage() {
       }
     },
     onSuccess: () => {
-      toast.success('Keys generated successfully!');
+      toast.success("Keys generated successfully!");
     },
     onError: (error) => {
       toast.error(`Failed to generate keys: ${error.message}`);
-    }
+    },
   });
 
   // Handle registration transaction states
   useEffect(() => {
-    if (registerTxState.status === 'confirmed') {
-      setRegistryStatus('registered');
-      toast.success('Meta address registered successfully!');
-    } else if (registerTxState.status === 'failed') {
+    if (registerTxState.status === "confirmed") {
+      setRegistryStatus("registered");
+      toast.success("Meta address registered successfully!");
+    } else if (registerTxState.status === "failed") {
       toast.error(`Registration failed: ${registerTxState.error}`);
     }
   }, [registerTxState]);
@@ -100,40 +133,59 @@ export default function KeysPage() {
   // Handle register meta address
   const handleRegisterMetaAddress = async () => {
     if (!metaAddress) {
-      toast.error('Please generate keys first');
+      toast.error("Please generate keys first");
       return;
     }
 
     if (!accountId) {
-      toast.error('Please connect your wallet first');
+      toast.error("Please connect your wallet first");
       return;
     }
 
     try {
-      setRegisterTxState({ status: 'preparing' });
-      
+      setRegisterTxState({ status: "preparing" });
+
       // Ensure we have a string, not an object
-      const addressString = typeof metaAddress === 'string' ? metaAddress : metaAddress.formatted;
-      
-      // Register using MetaMask
-      const result = await registerMetaAddressWithMetaMask(addressString);
-      
+      const addressString =
+        typeof metaAddress === "string" ? metaAddress : metaAddress.formatted;
+
+      // Register using WalletConnect
+      if (!sdk) {
+        throw new Error("WalletConnect SDK not available");
+      }
+      const result = await registerMetaAddressWithWalletConnect(
+        sdk,
+        addressString
+      );
+
       if (result.success) {
-        setRegisterTxState({ status: 'pending', transactionId: result.hash });
-        
+        setRegisterTxState({ status: "pending", transactionId: result.hash });
+
         // Wait for confirmation
-        const confirmed = await waitForTransactionConfirmation(result.hash);
-        
+        const confirmed = await waitForTransactionConfirmationWithWalletConnect(
+          sdk,
+          result.hash
+        );
+
         if (confirmed) {
-          setRegisterTxState({ status: 'confirmed', transactionId: result.hash });
+          setRegisterTxState({
+            status: "confirmed",
+            transactionId: result.hash,
+          });
         } else {
-          setRegisterTxState({ status: 'failed', error: 'Transaction failed' });
+          setRegisterTxState({ status: "failed", error: "Transaction failed" });
         }
       } else {
-        setRegisterTxState({ status: 'failed', error: result.error || 'Registration failed' });
+        setRegisterTxState({
+          status: "failed",
+          error: result.error || "Registration failed",
+        });
       }
     } catch (error) {
-      setRegisterTxState({ status: 'failed', error: error instanceof Error ? error.message : 'Unknown error' });
+      setRegisterTxState({
+        status: "failed",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
     }
   };
 
@@ -147,37 +199,40 @@ export default function KeysPage() {
       spendingPublicKey: userKeys.spendingPublicKey,
       viewingPublicKey: userKeys.viewingPublicKey,
       metaAddress: metaAddress,
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
     };
 
-    const blob = new Blob([JSON.stringify(keysData, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(keysData, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `whisper-keys-${Date.now()}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    
-    toast.success('Keys exported successfully!');
+
+    toast.success("Keys exported successfully!");
   };
 
   // Handle copy meta address
   const handleCopyMetaAddress = () => {
     if (metaAddress) {
-      copyToClipboard(metaAddress, 'Meta address');
+      copyToClipboard(metaAddress, "Meta address");
     }
   };
 
   return (
     <div className="w-full">
       <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-white mb-4">
-              Manage Your Stealth Keys
-            </h1>
-            <p className="text-lg text-gray-300 mb-6">
-          Generate, backup, and register your stealth meta-address for anonymous communication.
+        <h1 className="text-4xl font-bold text-white mb-4">
+          Manage Your Stealth Keys
+        </h1>
+        <p className="text-lg text-gray-300 mb-6">
+          Generate, backup, and register your stealth meta-address for anonymous
+          communication.
         </p>
         <div className="flex justify-center gap-4 flex-wrap">
           <Badge variant="outline" icon={Shield} className="px-4 py-2">
@@ -198,8 +253,8 @@ export default function KeysPage() {
           title="Connect Your Wallet"
           description="Connect your Hedera wallet to manage your stealth keys"
           action={{
-            label: isConnecting ? 'Connecting...' : 'Connect Wallet',
-            onClick: connect
+            label: isConnecting ? "Connecting..." : "Connect Wallet",
+            onClick: connect,
           }}
           className="max-w-md mx-auto"
         />
@@ -219,17 +274,27 @@ export default function KeysPage() {
             <CardContent>
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <StatusBadge 
-                    status={userKeys ? 'success' : 'warning'} 
-                    text={userKeys ? 'Keys Generated' : 'Keys Not Generated'} 
+                  <StatusBadge
+                    status={userKeys ? "success" : "warning"}
+                    text={userKeys ? "Keys Generated" : "Keys Not Generated"}
                     icon={userKeys ? CheckCircle : AlertTriangle}
                   />
                 </div>
                 <div className="flex items-center gap-3">
-                  <StatusBadge 
-                    status={registryStatus === 'registered' ? 'success' : 'warning'} 
-                    text={registryStatus === 'registered' ? 'Registered to Registry' : 'Not Registered'} 
-                    icon={registryStatus === 'registered' ? CheckCircle : AlertTriangle}
+                  <StatusBadge
+                    status={
+                      registryStatus === "registered" ? "success" : "warning"
+                    }
+                    text={
+                      registryStatus === "registered"
+                        ? "Registered to Registry"
+                        : "Not Registered"
+                    }
+                    icon={
+                      registryStatus === "registered"
+                        ? CheckCircle
+                        : AlertTriangle
+                    }
                   />
                 </div>
               </div>
@@ -251,7 +316,9 @@ export default function KeysPage() {
                   title="Setup Required"
                   description="Generate your stealth keys to start receiving anonymous messages"
                   action={{
-                    label: generateKeysMutation.isPending ? 'Generating...' : 'Generate Stealth Keys',
+                    label: generateKeysMutation.isPending
+                      ? "Generating..."
+                      : "Generate Stealth Keys",
                     onClick: handleGenerateKeys,
                     loading: generateKeysMutation.isPending,
                   }}
@@ -271,25 +338,33 @@ export default function KeysPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={typeof metaAddress === 'string' ? metaAddress : metaAddress?.formatted || ''}
-                        readOnly
-                        className="font-mono text-sm"
-                      />
-                      <CopyButton 
-                        text={typeof metaAddress === 'string' ? metaAddress : metaAddress?.formatted || ''} 
-                        label="Meta-address" 
-                        size="sm"
-                      />
-                    </div>
-                
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={
+                      typeof metaAddress === "string"
+                        ? metaAddress
+                        : metaAddress?.formatted || ""
+                    }
+                    readOnly
+                    className="font-mono text-sm"
+                  />
+                  <CopyButton
+                    text={
+                      typeof metaAddress === "string"
+                        ? metaAddress
+                        : metaAddress?.formatted || ""
+                    }
+                    label="Meta-address"
+                    size="sm"
+                  />
+                </div>
+
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
                     onClick={() => {
                       // TODO: Implement QR code generation
-                      toast.info('QR code feature coming soon!');
+                      toast.info("QR code feature coming soon!");
                     }}
                   >
                     <QrCode className="h-4 w-4 mr-2" />
@@ -299,7 +374,7 @@ export default function KeysPage() {
                     variant="outline"
                     onClick={() => {
                       // TODO: Implement sharing functionality
-                      toast.info('Share feature coming soon!');
+                      toast.info("Share feature coming soon!");
                     }}
                   >
                     <ExternalLink className="h-4 w-4 mr-2" />
@@ -328,14 +403,14 @@ export default function KeysPage() {
                       readOnly
                       className="font-mono text-sm"
                     />
-                    <CopyButton 
-                      text={userKeys.spendingPublicKey} 
-                      label="Spending Public Key" 
+                    <CopyButton
+                      text={userKeys.spendingPublicKey}
+                      label="Spending Public Key"
                       size="sm"
                     />
                   </div>
                 </div>
-                
+
                 <div>
                   <Label>Viewing Public Key</Label>
                   <div className="flex items-center gap-2 mt-1">
@@ -344,9 +419,9 @@ export default function KeysPage() {
                       readOnly
                       className="font-mono text-sm"
                     />
-                    <CopyButton 
-                      text={userKeys.viewingPublicKey} 
-                      label="Viewing Public Key" 
+                    <CopyButton
+                      text={userKeys.viewingPublicKey}
+                      label="Viewing Public Key"
                       size="sm"
                     />
                   </div>
@@ -356,7 +431,9 @@ export default function KeysPage() {
                   <div className="space-y-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
                     <div className="flex items-center gap-2 text-yellow-800">
                       <AlertTriangle className="h-4 w-4" />
-                      <span className="font-medium">Private Keys (Keep Secure!)</span>
+                      <span className="font-medium">
+                        Private Keys (Keep Secure!)
+                      </span>
                     </div>
                     <div>
                       <Label>Spending Private Key</Label>
@@ -366,9 +443,9 @@ export default function KeysPage() {
                           readOnly
                           className="font-mono text-sm"
                         />
-                        <CopyButton 
-                          text={userKeys.spendingPrivateKey} 
-                          label="Spending Private Key" 
+                        <CopyButton
+                          text={userKeys.spendingPrivateKey}
+                          label="Spending Private Key"
                           size="sm"
                         />
                       </div>
@@ -381,9 +458,9 @@ export default function KeysPage() {
                           readOnly
                           className="font-mono text-sm"
                         />
-                        <CopyButton 
-                          text={userKeys.viewingPrivateKey} 
-                          label="Viewing Private Key" 
+                        <CopyButton
+                          text={userKeys.viewingPrivateKey}
+                          label="Viewing Private Key"
                           size="sm"
                         />
                       </div>
@@ -396,12 +473,9 @@ export default function KeysPage() {
                     variant="outline"
                     onClick={() => setShowPrivateKeys(!showPrivateKeys)}
                   >
-                    {showPrivateKeys ? 'Hide' : 'Show'} Private Keys
+                    {showPrivateKeys ? "Hide" : "Show"} Private Keys
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleExportKeys}
-                  >
+                  <Button variant="outline" onClick={handleExportKeys}>
                     <Download className="h-4 w-4 mr-2" />
                     Export Keys
                   </Button>
@@ -411,7 +485,7 @@ export default function KeysPage() {
           )}
 
           {/* Registry Registration */}
-          {metaAddress && registryStatus !== 'registered' && (
+          {metaAddress && registryStatus !== "registered" && (
             <Card>
               <CardHeader>
                 <CardTitle>Registry Registration</CardTitle>
@@ -420,21 +494,27 @@ export default function KeysPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Button 
+                <Button
                   onClick={handleRegisterMetaAddress}
-                  disabled={!metaAddress || registerTxState.status === 'preparing' || registerTxState.status === 'pending'}
+                  disabled={
+                    !metaAddress ||
+                    registerTxState.status === "preparing" ||
+                    registerTxState.status === "pending"
+                  }
                   className="w-full"
                 >
-                  {registerTxState.status === 'preparing' ? 'Preparing...' : 
-                   registerTxState.status === 'pending' ? 'Confirming...' : 
-                   'Register to ERC-6538 Registry'}
+                  {registerTxState.status === "preparing"
+                    ? "Preparing..."
+                    : registerTxState.status === "pending"
+                    ? "Confirming..."
+                    : "Register to ERC-6538 Registry"}
                 </Button>
-                {registerTxState.status === 'failed' && (
+                {registerTxState.status === "failed" && (
                   <p className="text-sm text-red-600 mt-2">
                     Registration failed: {registerTxState.error}
                   </p>
                 )}
-                {registerTxState.status === 'confirmed' && (
+                {registerTxState.status === "confirmed" && (
                   <p className="text-sm text-green-600 mt-2">
                     ✓ Successfully registered to registry
                   </p>
@@ -449,10 +529,13 @@ export default function KeysPage() {
               <div className="flex items-start gap-3">
                 <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
                 <div>
-                  <h3 className="font-medium text-yellow-800 mb-2">Security Warning</h3>
+                  <h3 className="font-medium text-yellow-800 mb-2">
+                    Security Warning
+                  </h3>
                   <p className="text-sm text-yellow-700">
-                    Keep your private keys secure. Loss of private keys means permanent loss of access 
-                    to received content. Never share your private keys with anyone.
+                    Keep your private keys secure. Loss of private keys means
+                    permanent loss of access to received content. Never share
+                    your private keys with anyone.
                   </p>
                 </div>
               </div>
