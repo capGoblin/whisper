@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
-import { useWriteContract, useWaitForTransactionReceipt, useSwitchChain, usePublicClient, useEnsAddress } from 'wagmi';
+import { useWallet } from '@/providers/WalletProvider';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/ui/button';
@@ -12,7 +11,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Label } from '../../components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { Badge } from '../../components/ui/badge';
-import { baseSepolia } from 'wagmi/chains';
 import EmptyState from '../components/shared/EmptyState';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import StatusBadge from '../components/shared/StatusBadge';
@@ -25,20 +23,10 @@ import { prepareMetadata, computeSharedSecret } from '../../utils/encryption';
 import { getUserKeys } from '../../utils/pass-keys-simple';
 
 // Types
-import { UserKeys, TransactionState, RecipientInfo } from '../../types';
-
-// Constants
-import { ANNOUNCE_CONTRACT_ADDRESS } from '../../constants/contracts';
+import { UserKeys, HederaTransactionState, RecipientInfo } from '../../types';
 
 export default function SendPage() {
-  const { authenticated, login } = usePrivy();
-  const publicClient = usePublicClient();
-  const { switchChain } = useSwitchChain();
-  const { data: ensAddress } = useEnsAddress({
-    name: '', // Will be set dynamically
-    chainId: 1,
-    query: { enabled: false }
-  });
+  const { connect, disconnect, accountId, isConnecting, sdk } = useWallet();
 
   // State
   const [userKeys, setUserKeys] = useState<UserKeys | null>(null);
@@ -72,37 +60,18 @@ export default function SendPage() {
   const [tipToken, setTipToken] = useState('ETH');
 
   // Transaction state
-  const [sendTxState, setSendTxState] = useState<TransactionState>({ status: 'idle' });
-
-  // Write contract for announcements
-  const { 
-    data: announceHash, 
-    error: announceError, 
-    isPending: isAnnouncing, 
-    writeContract: writeAnnounce 
-  } = useWriteContract();
-
-  // Wait for transaction receipts
-  const { isLoading: isConfirmingSend, isSuccess: isSendSuccess } = useWaitForTransactionReceipt({
-    hash: announceHash,
-  });
+  const [sendTxState, setSendTxState] = useState<HederaTransactionState>({ status: 'idle' });
 
   // Handle transaction state updates
   useEffect(() => {
-    if (isAnnouncing) {
-      setSendTxState({ status: 'pending', hash: announceHash });
-    } else if (isConfirmingSend) {
-      setSendTxState({ status: 'confirming', hash: announceHash });
-    } else if (isSendSuccess) {
-      setSendTxState({ status: 'confirmed', hash: announceHash });
+    if (sendTxState.status === 'confirmed') {
       toast.success('Message sent successfully!');
       setMessageInput('');
       setRecipientInput('');
-    } else if (announceError) {
-      setSendTxState({ status: 'failed', error: announceError.message });
-      toast.error(`Send failed: ${announceError.message}`);
+    } else if (sendTxState.status === 'failed') {
+      toast.error(`Send failed: ${sendTxState.error}`);
     }
-  }, [isAnnouncing, isConfirmingSend, isSendSuccess, announceError, announceHash]);
+  }, [sendTxState]);
 
   // Send message mutation
   const sendMessageMutation = useMutation({
@@ -111,16 +80,18 @@ export default function SendPage() {
         throw new Error('Recipient and message are required');
       }
 
-      // Switch to Base Sepolia
-      await switchChain({ chainId: baseSepolia.id });
+      if (!sdk) {
+        throw new Error('SDK not initialized');
+      }
 
-      // Generate stealth address
-      const stealthResult = await generateStealthAddressOfficial(recipientInfo.metaAddress);
-
-      // Validate user keys
       if (!userKeys?.viewingPrivateKey) {
         throw new Error('User keys not available. Please generate keys first.');
       }
+
+      setSendTxState({ status: 'preparing' });
+
+      // Generate stealth address
+      const stealthResult = await generateStealthAddressOfficial(recipientInfo.metaAddress);
 
       // Compute shared secret for encryption
       const sharedSecret = computeSharedSecret(
@@ -128,37 +99,40 @@ export default function SendPage() {
         stealthResult.ephemeralPubKey
       );
 
-      // Encrypt message
-      const encryptedMetadata = await prepareMetadata(messageInput, sharedSecret);
+      // Create message content
+      const messageContent = {
+        text: messageInput,
+        files: selectedFile ? [selectedFile] : [],
+        timestamp: Date.now(),
+        sender: accountId || '',
+        stealthAddress: stealthResult.stealthAddress,
+        ephemeralPubKey: stealthResult.ephemeralPubKey,
+      };
 
-      // Announce transaction
-      await writeAnnounce({
-        address: ANNOUNCE_CONTRACT_ADDRESS,
-        abi: [
-          {
-            name: "announce",
-            type: "function",
-            inputs: [
-              { name: "schemeId", type: "uint256" },
-              { name: "stealthAddress", type: "address" },
-              { name: "ephemeralPubKey", type: "bytes" },
-              { name: "metadata", type: "bytes" }
-            ],
-            outputs: [],
-            stateMutability: "nonpayable"
-          }
-        ],
-        functionName: "announce",
-        args: [
-          BigInt(1), // schemeId
-          stealthResult.stealthAddress as `0x${string}`,
-          stealthResult.ephemeralPubKey as `0x${string}`,
-          encryptedMetadata as `0x${string}`
-        ]
-      });
+      // Send message using HashinalWC SDK
+      try {
+        const result = await sdk.submitMessage({
+          content: messageContent,
+          recipient: recipientInfo.metaAddress,
+          sharedSecret,
+        });
+        
+        setSendTxState({ 
+          status: 'confirmed', 
+          transactionId: result.transactionId 
+        });
+      } catch (error: any) {
+        setSendTxState({ 
+          status: 'failed', 
+          error: error?.message || 'Failed to send message' 
+        });
+      }
     },
     onError: (error) => {
-      toast.error(`Failed to send message: ${error.message}`);
+      setSendTxState({ 
+        status: 'failed', 
+        error: error.message 
+      });
     }
   });
 
@@ -246,14 +220,14 @@ export default function SendPage() {
         </div>
       </div>
 
-      {!authenticated ? (
+      {!accountId ? (
         <EmptyState
           icon={Shield}
           title="Connect Your Wallet"
-          description="Connect your wallet to send anonymous content"
+          description="Connect your Hedera wallet to send anonymous content"
           action={{
-            label: 'Connect Wallet',
-            onClick: login
+            label: isConnecting ? 'Connecting...' : 'Connect Wallet',
+            onClick: connect
           }}
           className="max-w-md mx-auto"
         />
@@ -436,16 +410,31 @@ export default function SendPage() {
                         text={sendTxState.status} 
                       />
                     </div>
-                    {sendTxState.hash && (
+                    {sendTxState.transactionId && (
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600">Transaction Hash:</span>
+                        <span className="text-sm text-gray-600">Transaction ID:</span>
                         <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                          {sendTxState.hash.slice(0, 10)}...
+                          {sendTxState.transactionId.slice(0, 10)}...
                         </code>
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => copyToClipboard(sendTxState.hash!, 'Transaction hash')}
+                          onClick={() => copyToClipboard(sendTxState.transactionId!, 'Transaction ID')}
+                        >
+                          Copy
+                        </Button>
+                      </div>
+                    )}
+                    {sendTxState.topicId && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-sm text-gray-600">Topic ID:</span>
+                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                          {sendTxState.topicId}
+                        </code>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(sendTxState.topicId!, 'Topic ID')}
                         >
                           Copy
                         </Button>

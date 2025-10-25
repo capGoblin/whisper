@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { useWallet } from '@/providers/WalletProvider';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { Button } from '../../components/ui/button';
@@ -16,23 +16,23 @@ import StatusBadge from '../components/shared/StatusBadge';
 import CopyButton from '../components/shared/CopyButton';
 
 // Utils
-import { scanForMessagesOfficial } from '../../utils/stealth-sdk-official';
+import { scanMessages } from '../../utils/hedera';
 import { decryptMetadata } from '../../utils/encryption';
 import { getUserKeys } from '../../utils/pass-keys-simple';
 
 // Types
-import { UserKeys, Message, MessageType } from '../../types';
+import { UserKeys, DecryptedMessage } from '../../types';
 
 export default function InboxPage() {
-  const { authenticated, login } = usePrivy();
+  const { connect, disconnect, accountId, isConnecting, sdk } = useWallet();
   
   // State
   const [userKeys, setUserKeys] = useState<UserKeys | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<DecryptedMessage[]>([]);
   const [filter, setFilter] = useState<'all' | 'messages' | 'files' | 'tips'>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'unread'>('newest');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<DecryptedMessage | null>(null);
 
   // Load user keys on mount
   useEffect(() => {
@@ -54,7 +54,13 @@ export default function InboxPage() {
       if (!userKeys) {
         throw new Error('User keys not available');
       }
-      return await scanForMessagesOfficial(userKeys);
+      
+      if (!sdk) {
+        throw new Error('Hedera SDK not initialized');
+      }
+      
+      // Use Hedera SDK for scanning
+      return await scanMessages(userKeys, sdk);
     },
     onSuccess: (scannedMessages) => {
       setMessages(scannedMessages);
@@ -150,14 +156,14 @@ export default function InboxPage() {
         </div>
       </div>
 
-      {!authenticated ? (
+      {!accountId ? (
         <EmptyState
           icon={Shield}
           title="Connect Your Wallet"
-          description="Connect your wallet to access your anonymous inbox"
+          description="Connect your Hedera wallet to access your anonymous inbox"
           action={{
-            label: 'Connect Wallet',
-            onClick: login
+            label: isConnecting ? 'Connecting...' : 'Connect Wallet',
+            onClick: connect
           }}
           className="max-w-md mx-auto"
         />

@@ -2,17 +2,12 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePrivy } from '@privy-io/react-auth';
-import { useChainId } from 'wagmi';
-import { baseSepolia } from 'wagmi/chains';
+import { useWallet } from '@/providers/WalletProvider';
 import { Button } from '../../../components/ui/button';
 import { Badge } from '../../../components/ui/badge';
 
 export default function TopBar() {
-  const { authenticated, login, logout } = usePrivy();
-  const chainId = useChainId();
-
-  const isBaseSepolia = chainId === baseSepolia.id;
+  const { connect, disconnect, accountId, isConnecting } = useWallet();
 
   return (
     <header className="bg-gray-900 text-white p-4 shadow-md w-full">
@@ -22,26 +17,24 @@ export default function TopBar() {
         </Link>
 
         <div className="flex items-center space-x-4">
-          {chainId && (
-            <Badge variant="outline" className={`
-              ${isBaseSepolia ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}
-              border-transparent
-              whitespace-nowrap
-            `}>
-              Network: {isBaseSepolia ? 'Base Sepolia' : 'Unknown'} ({chainId})
-            </Badge>
-          )}
+          <Badge variant="outline" className="bg-blue-500 text-white border-transparent whitespace-nowrap">
+            Network: Hedera Testnet
+          </Badge>
           
-          {authenticated ? (
-            <Button variant="secondary" onClick={logout}>
-              Disconnect
-            </Button>
+          {accountId ? (
+            <div className="flex items-center space-x-2">
+              <Badge variant="outline" className="bg-green-500 text-white border-transparent">
+                {accountId.slice(0, 8)}...{accountId.slice(-4)}
+              </Badge>
+              <Button variant="secondary" onClick={disconnect}>
+                Disconnect
+              </Button>
+            </div>
           ) : (
-            <Button onClick={login}>
-              Connect Wallet
+            <Button onClick={connect} disabled={isConnecting}>
+              {isConnecting ? 'Connecting...' : 'Connect Wallet'}
             </Button>
           )}
-          {/* UserMenu component will go here */}
         </div>
       </div>
     </header>

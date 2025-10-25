@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { useWallet } from '@/providers/WalletProvider';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
@@ -17,15 +17,15 @@ import NetworkIndicator from '../components/shared/NetworkIndicator';
 // Utils
 import { setupPassKeys, generateStealthKeys, createStealthMetaAddress, storeUserKeys, getUserKeys, clearUserKeys } from '../../utils/pass-keys-simple';
 import { generateTestKeys, createTestStealthMetaAddress, storeTestKeys, getTestKeys, clearTestKeys } from '../../utils/pass-keys-fallback';
-import { scanForSimpleMessages } from '../../utils/scan-simple';
-import { useRegistryStatus } from '../../utils/registry';
+import { scanMessages } from '../../utils/hedera';
+import { getRegistryStatusWithMetaMask } from '../../utils/registry-metamask';
 
 // Types
 import { UserKeys, StealthMetaAddress, DecryptedMessage } from '../../types';
 
 export default function DashboardPage() {
-  // Privy auth
-  const { ready, authenticated, login, user } = usePrivy();
+  // Hedera wallet
+  const { connect, disconnect, accountId, isConnecting, sdk } = useWallet();
   
   // State
   const [userKeys, setUserKeys] = useState<UserKeys | null>(null);
@@ -33,8 +33,13 @@ export default function DashboardPage() {
   const [messages, setMessages] = useState<DecryptedMessage[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   
-  // Registry hooks
-  const userRegistryStatus = useRegistryStatus(user?.wallet?.address || '');
+  // Registry state
+  const [userRegistryStatus, setUserRegistryStatus] = useState({
+    isRegistered: false,
+    metaAddress: undefined,
+    isLoading: false,
+    error: undefined
+  });
   
   // Load user keys on mount
   useEffect(() => {
@@ -45,6 +50,37 @@ export default function DashboardPage() {
       setStealthMetaAddress(metaAddress);
     }
   }, []);
+
+  // Check registry status when accountId changes
+  useEffect(() => {
+    const checkRegistryStatus = async () => {
+      if (!accountId) {
+        setUserRegistryStatus({
+          isRegistered: false,
+          metaAddress: undefined,
+          isLoading: false,
+          error: undefined
+        });
+        return;
+      }
+
+      setUserRegistryStatus(prev => ({ ...prev, isLoading: true }));
+      
+      try {
+        const status = await getRegistryStatusWithMetaMask(accountId);
+        setUserRegistryStatus(status);
+      } catch (error) {
+        setUserRegistryStatus({
+          isRegistered: false,
+          metaAddress: undefined,
+          isLoading: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    };
+
+    checkRegistryStatus();
+  }, [accountId]);
   
   // Setup keys mutation
   const setupKeysMutation = useMutation({
@@ -78,8 +114,13 @@ export default function DashboardPage() {
       if (!userKeys) {
         throw new Error('User keys not available');
       }
+      
+      if (!sdk) {
+        throw new Error('Hedera SDK not initialized');
+      }
+      
       setIsScanning(true);
-      const foundMessages = await scanForSimpleMessages(null, userKeys);
+      const foundMessages = await scanMessages(userKeys, sdk);
       return foundMessages;
     },
     onSuccess: (foundMessages) => {
@@ -100,16 +141,6 @@ export default function DashboardPage() {
     toast.success(`${label} copied to clipboard`);
   };
   
-  if (!ready) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
-          <p className="mt-2">Loading...</p>
-        </div>
-      </div>
-    );
-  }
   
   return (
     <div className="w-full">
@@ -130,18 +161,21 @@ export default function DashboardPage() {
           </Badge>
           <Badge variant="outline" icon={Key} className="px-4 py-2">
             Stealth Addresses
-        </Badge>
+          </Badge>
+          <Badge variant="outline" className="px-4 py-2 bg-blue-500/20 text-blue-400 border-blue-500/30">
+            Hedera Testnet
+          </Badge>
         </div>
       </div>
       
-      {!authenticated ? (
+      {!accountId ? (
         <EmptyState
           icon={Shield}
           title="Connect Your Wallet"
-          description="Connect your wallet to start using Whisper for anonymous communication"
+          description="Connect your Hedera wallet to start using Whisper for anonymous communication"
           action={{
-            label: 'Connect Wallet',
-            onClick: login
+            label: isConnecting ? 'Connecting...' : 'Connect Wallet',
+            onClick: connect
           }}
           className="max-w-md mx-auto"
         />

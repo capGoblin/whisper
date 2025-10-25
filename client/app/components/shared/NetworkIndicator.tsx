@@ -1,7 +1,5 @@
 import React from 'react';
-import { useNetwork } from 'wagmi';
 import { Badge } from '../../../components/ui/badge';
-import { baseSepolia } from 'wagmi/chains';
 import { cn } from '../../../lib/utils';
 
 interface NetworkIndicatorProps {
@@ -9,9 +7,10 @@ interface NetworkIndicatorProps {
 }
 
 export default function NetworkIndicator({ className = '' }: NetworkIndicatorProps) {
-  const { chain } = useNetwork();
-  
-  const isCorrectNetwork = chain?.id === baseSepolia.id;
+  // Hedera Testnet configuration
+  const networkName = 'Hedera Testnet';
+  const chainId = 296;
+  const isCorrectNetwork = true; // Always true for Hedera Testnet
   
   return (
     <Badge
@@ -28,7 +27,7 @@ export default function NetworkIndicator({ className = '' }: NetworkIndicatorPro
         'w-2 h-2 rounded-full mr-2',
         isCorrectNetwork ? 'bg-green-500' : 'bg-red-500'
       )} />
-      Network: {chain?.name || 'Not Connected'} ({chain?.id || 'N/A'})
+      Network: {networkName} ({chainId})
     </Badge>
   );
 }

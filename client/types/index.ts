@@ -104,4 +104,112 @@ export interface UserProfile {
   messageHistory: MessageHistory;
 }
 
+// Hedera-specific types
+
+export interface HederaMessage {
+  topicId: string;
+  content: any;
+  timestamp: number;
+  sender: string;
+  messageId: string;
+}
+
+export interface HederaTransactionState {
+  status: 'idle' | 'preparing' | 'pending' | 'confirming' | 'confirmed' | 'failed';
+  transactionId?: string;
+  topicId?: string;
+  error?: string;
+  blockNumber?: number;
+}
+
+export interface HederaTransactionResult {
+  transactionId: string;
+  topicId?: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface HederaScanResult {
+  messages: DecryptedMessage[];
+  totalScanned: number;
+  newMessages: number;
+}
+
+export interface HederaFileData {
+  fileName: string;
+  mimeType: string;
+  size: number;
+  checksum: string;
+  encryptedData: number[]; // Array of numbers for JSON serialization
+  timestamp: number;
+  version: string;
+}
+
+export interface HederaMessageContent {
+  type: 'message' | 'file' | 'tip';
+  content: string | HederaFileData;
+  timestamp: number;
+  sender?: string;
+  recipient?: string;
+  sharedSecret?: string;
+  version: string;
+}
+
+// MetaMask integration types
+
+export interface MetaMaskTransactionResult {
+  hash: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface MetaMaskRegistryStatus {
+  isRegistered: boolean;
+  metaAddress?: string;
+  isLoading: boolean;
+  error?: string;
+}
+
+// File processing types
+
+export interface ProcessedFile {
+  compressedData: Uint8Array;
+  encryptedData: Uint8Array;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  checksum: string;
+}
+
+// Enhanced message types for Hedera integration
+
+export interface HederaDecryptedMessage extends DecryptedMessage {
+  topicId?: string;
+  messageId?: string;
+  sender?: string;
+  fileData?: HederaFileData;
+}
+
+export interface HederaMessageInput {
+  recipient: string;
+  content: string | HederaFileData;
+  type: 'message' | 'file' | 'tip';
+  sharedSecret?: string;
+}
+
+// Wallet connection types
+
+export interface WalletConnectionState {
+  isConnected: boolean;
+  accountId: string | null;
+  isConnecting: boolean;
+  error?: string;
+}
+
+export interface HederaWalletState extends WalletConnectionState {
+  sdk: any | null; // HashinalsWalletConnectSDK instance
+  network: 'testnet' | 'mainnet';
+  balance?: string;
+}
+
 
