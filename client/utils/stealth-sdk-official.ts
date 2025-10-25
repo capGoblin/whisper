@@ -13,6 +13,7 @@ import { createPublicClient, http } from 'viem';
 import { baseSepolia } from 'viem/chains';
 import { UserKeys, StealthMetaAddress, Message } from '../types';
 import { ANNOUNCE_CONTRACT_ADDRESS } from '../constants/contracts';
+import { computeSharedSecret, decryptMetadata } from './encryption';
 
 // Base Sepolia configuration
 const CHAIN_ID = 84532; // Base Sepolia
@@ -102,7 +103,7 @@ export const getAnnouncementsOfficial = async () => {
 
 /**
  * Get recent announcements for specific user using direct blockchain query (last 1000 blocks only)
- * Based on working @app/ implementation
+ * Based on working implementation
  */
 export const getAnnouncementsForUserOfficial = async (
   userKeys: UserKeys
@@ -112,7 +113,7 @@ export const getAnnouncementsForUserOfficial = async (
     const currentBlock = await publicClient.getBlockNumber();
     const fromBlock = Math.max(0, Number(currentBlock) - 1000); // Only scan last 1000 blocks
     
-    // Query announcements directly from blockchain (like @app/ does)
+    // Query announcements directly from blockchain (like does)
     const logs = await publicClient.getLogs({
       address: ANNOUNCE_CONTRACT_ADDRESS, // ERC-5564 Announcer contract on Base Sepolia
       event: {
@@ -132,7 +133,7 @@ export const getAnnouncementsForUserOfficial = async (
     });
     
     // Convert logs to announcement format
-    const announcements = logs.map(log => ({
+    const allAnnouncements = logs.map(log => ({
       schemeId: log.args.schemeId,
       stealthAddress: log.args.stealthAddress,
       caller: log.args.caller,
@@ -142,8 +143,38 @@ export const getAnnouncementsForUserOfficial = async (
       transactionHash: log.transactionHash
     }));
     
-    console.log(`Scanned recent blocks ${fromBlock}-${currentBlock} for user, found ${announcements.length} announcements`);
-    return announcements;
+    // Filter announcements for this user by checking if we can decrypt them
+    // This is the key fix - we need to test decryption to find messages meant for us
+    const userAnnouncements = [];
+    
+    for (const announcement of allAnnouncements) {
+      try {
+        // Try to compute shared secret and decrypt
+        const sharedSecret = computeSharedSecret(
+          userKeys.viewingPrivateKey,
+          announcement.ephemeralPubKey || ''
+        );
+        
+        // Try to decrypt the metadata
+        const decryptedContent = await decryptMetadata(
+          announcement.metadata || '',
+          sharedSecret
+        );
+        
+        // If decryption succeeds, this message is for us
+        if (decryptedContent) {
+          userAnnouncements.push(announcement);
+          console.log('Found message for user:', decryptedContent);
+        }
+      } catch (error) {
+        // Decryption failed, this message is not for us
+        // This is expected for most announcements
+        continue;
+      }
+    }
+    
+    console.log(`Scanned recent blocks ${fromBlock}-${currentBlock}, found ${allAnnouncements.length} total announcements, ${userAnnouncements.length} for user`);
+    return userAnnouncements;
   } catch (error) {
     console.error('Error getting announcements for user:', error);
     throw error;
@@ -181,14 +212,62 @@ export const scanForMessagesOfficial = async (
   userKeys: UserKeys
 ): Promise<Message[]> => {
   try {
+    // Get announcements that are already filtered for this user
     const announcements = await getAnnouncementsForUserOfficial(userKeys);
     
-    const messages: Message[] = announcements.map((announcement, index) => ({
-      from: 'Anonymous',
-      content: announcement.metadata || '', // Plain text message, fallback to empty string
-      timestamp: Date.now(),
-      stealthAddress: announcement.stealthAddress || ''
-    }));
+    const messages: Message[] = [];
+    
+    for (const announcement of announcements) {
+      try {
+        // Compute shared secret for this announcement
+        const sharedSecret = computeSharedSecret(
+          userKeys.viewingPrivateKey,
+          announcement.ephemeralPubKey || ''
+        );
+        
+        // Decrypt the metadata
+        const decryptedContent = await decryptMetadata(
+          announcement.metadata || '',
+          sharedSecret
+        );
+        
+        if (decryptedContent) {
+          // Determine message type based on content
+          let messageType: 'message' | 'file' | 'tip' = 'message';
+          let displayContent = typeof decryptedContent === 'string' ? decryptedContent : JSON.stringify(decryptedContent);
+          
+          // Check if it's a JSON object (file or tip)
+          if (typeof decryptedContent === 'object' && decryptedContent !== null) {
+            if ('type' in decryptedContent && decryptedContent.type === 'file') {
+              messageType = 'file';
+            } else if ('type' in decryptedContent && decryptedContent.type === 'tip') {
+              messageType = 'tip';
+            }
+          }
+          
+          messages.push({
+            from: 'Anonymous',
+            content: displayContent,
+            timestamp: Date.now(),
+            stealthAddress: announcement.stealthAddress || '',
+            decryptionSuccess: true,
+            type: messageType
+          });
+        }
+      } catch (decryptError) {
+        console.warn('Failed to decrypt message:', decryptError);
+        // This shouldn't happen since we already filtered in getAnnouncementsForUserOfficial
+        // But keep as fallback
+        messages.push({
+          from: 'Anonymous',
+          content: 'Encrypted',
+          timestamp: Date.now(),
+          stealthAddress: announcement.stealthAddress || '',
+          decryptionSuccess: false,
+          type: 'message'
+        });
+      }
+    }
     
     return messages;
   } catch (error) {

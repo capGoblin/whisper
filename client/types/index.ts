@@ -17,6 +17,8 @@ export interface Message {
   content: string;
   timestamp: number;
   stealthAddress: string;
+  decryptionSuccess?: boolean; // Whether the message was successfully decrypted
+  type?: 'message' | 'file' | 'tip'; // Type of message content
 }
 
 export interface StealthAddressResult {
