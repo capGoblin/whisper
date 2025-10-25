@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hashgraphonline/hashinal-wc": "^1.0.115",
+    "@hashgraph/sdk": "^2.75.0",
+    "@hashgraphonline/hashinal-wc": "^1.0.119",
     "@noble/secp256k1": "^3.0.0",
     "@privy-io/wagmi": "^2.0.1",
     "@radix-ui/react-alert-dialog": "^1.1.1",
@@ -26,6 +27,7 @@
     "@types/react": "18.2.22",
     "@types/react-dom": "18.2.7",
     "autoprefixer": "10.4.15",
+    "bn.js": "5.2.1",
     "buffer": "^6.0.3",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",

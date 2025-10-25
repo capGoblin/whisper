@@ -46,7 +46,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         const existingAccount = await instance.initAccount(
           PROJECT_ID,
           APP_METADATA,
-          HEDERA_TESTNET_CONFIG
+          LedgerId.TESTNET
         );
         if (existingAccount) {
           setAccountId(existingAccount.accountId);
@@ -64,8 +64,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setIsConnecting(true);
     try {
       const { accountId } = await sdk.connectWallet(
-        PROJECT_ID, 
-        APP_METADATA, 
+        PROJECT_ID,
+        APP_METADATA,
         HEDERA_TESTNET_CONFIG
       );
       setAccountId(accountId);

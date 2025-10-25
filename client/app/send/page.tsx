@@ -1,29 +1,53 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import { useWallet } from '@/providers/WalletProvider';
-import { useMutation } from '@tanstack/react-query';
-import toast from 'react-hot-toast';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Textarea } from '../../components/ui/textarea';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
-import { Label } from '../../components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { Badge } from '../../components/ui/badge';
-import EmptyState from '../components/shared/EmptyState';
-import LoadingSpinner from '../components/shared/LoadingSpinner';
-import StatusBadge from '../components/shared/StatusBadge';
-import { MessageCircle, FileText, DollarSign, Shield, Lock, Upload, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { useWallet } from "@/providers/WalletProvider";
+import { useMutation } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card";
+import { Label } from "../../components/ui/label";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../../components/ui/tabs";
+import { Badge } from "../../components/ui/badge";
+import EmptyState from "../components/shared/EmptyState";
+import LoadingSpinner from "../components/shared/LoadingSpinner";
+import StatusBadge from "../components/shared/StatusBadge";
+import {
+  MessageCircle,
+  FileText,
+  DollarSign,
+  Shield,
+  Lock,
+  Upload,
+  AlertCircle,
+} from "lucide-react";
 
 // Utils
-import { generateStealthAddressOfficial } from '../../utils/stealth-sdk-official';
-import { validateRecipientInput, validateMessageInput } from '../../utils/validation';
-import { prepareMetadata, computeSharedSecret } from '../../utils/encryption';
-import { getUserKeys } from '../../utils/pass-keys-simple';
+import { generateStealthAddressOfficial } from "../../utils/stealth-sdk-official";
+import {
+  validateRecipientInput,
+  validateMessageInput,
+} from "../../utils/validation";
+import { prepareMetadata, computeSharedSecret } from "../../utils/encryption";
+import { getUserKeys } from "../../utils/pass-keys-simple";
+import { getTestKeys } from "../../utils/pass-keys-fallback";
+import { sendMessage } from "../../utils/hedera";
 
 // Types
-import { UserKeys, HederaTransactionState, RecipientInfo } from '../../types';
+import { UserKeys, HederaTransactionState, RecipientInfo } from "../../types";
 
 export default function SendPage() {
   const { connect, disconnect, accountId, isConnecting, sdk } = useWallet();
@@ -33,9 +57,12 @@ export default function SendPage() {
 
   // Load user keys on mount
   useEffect(() => {
-    const storedKeys = getUserKeys();
+    const storedKeys = getUserKeys() || getTestKeys();
+    console.log("Stored keys from localStorage:", storedKeys);
     if (storedKeys) {
       setUserKeys(storedKeys);
+    } else {
+      console.log("No keys found in localStorage");
     }
   }, []);
 
@@ -46,29 +73,33 @@ export default function SendPage() {
   };
 
   // Send message state
-  const [activeTab, setActiveTab] = useState('message');
-  const [recipientInput, setRecipientInput] = useState('');
-  const [messageInput, setMessageInput] = useState('');
-  const [recipientInfo, setRecipientInfo] = useState<RecipientInfo | null>(null);
-  
+  const [activeTab, setActiveTab] = useState("message");
+  const [recipientInput, setRecipientInput] = useState("");
+  const [messageInput, setMessageInput] = useState("");
+  const [recipientInfo, setRecipientInfo] = useState<RecipientInfo | null>(
+    null
+  );
+
   // File upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  
+
   // Token tip state
-  const [tipAmount, setTipAmount] = useState('');
-  const [tipToken, setTipToken] = useState('ETH');
+  const [tipAmount, setTipAmount] = useState("");
+  const [tipToken, setTipToken] = useState("ETH");
 
   // Transaction state
-  const [sendTxState, setSendTxState] = useState<HederaTransactionState>({ status: 'idle' });
+  const [sendTxState, setSendTxState] = useState<HederaTransactionState>({
+    status: "idle",
+  });
 
   // Handle transaction state updates
   useEffect(() => {
-    if (sendTxState.status === 'confirmed') {
-      toast.success('Message sent successfully!');
-      setMessageInput('');
-      setRecipientInput('');
-    } else if (sendTxState.status === 'failed') {
+    if (sendTxState.status === "confirmed") {
+      toast.success("Message sent successfully!");
+      setMessageInput("");
+      setRecipientInput("");
+    } else if (sendTxState.status === "failed") {
       toast.error(`Send failed: ${sendTxState.error}`);
     }
   }, [sendTxState]);
@@ -77,21 +108,23 @@ export default function SendPage() {
   const sendMessageMutation = useMutation({
     mutationFn: async () => {
       if (!recipientInfo?.metaAddress || !messageInput.trim()) {
-        throw new Error('Recipient and message are required');
+        throw new Error("Recipient and message are required");
       }
 
       if (!sdk) {
-        throw new Error('SDK not initialized');
+        throw new Error("SDK not initialized");
       }
-
+      console.log(userKeys);
       if (!userKeys?.viewingPrivateKey) {
-        throw new Error('User keys not available. Please generate keys first.');
+        throw new Error("User keys not available. Please generate keys first.");
       }
 
-      setSendTxState({ status: 'preparing' });
+      setSendTxState({ status: "preparing" });
 
       // Generate stealth address
-      const stealthResult = await generateStealthAddressOfficial(recipientInfo.metaAddress);
+      const stealthResult = await generateStealthAddressOfficial(
+        recipientInfo.metaAddress
+      );
 
       // Compute shared secret for encryption
       const sharedSecret = computeSharedSecret(
@@ -104,36 +137,39 @@ export default function SendPage() {
         text: messageInput,
         files: selectedFile ? [selectedFile] : [],
         timestamp: Date.now(),
-        sender: accountId || '',
+        sender: accountId || "",
         stealthAddress: stealthResult.stealthAddress,
         ephemeralPubKey: stealthResult.ephemeralPubKey,
       };
 
       // Send message using HashinalWC SDK
       try {
-        const result = await sdk.submitMessage({
-          content: messageContent,
+        const metadata = await prepareMetadata(messageContent, sharedSecret);
+        const result = await sendMessage(sdk, {
           recipient: recipientInfo.metaAddress,
-          sharedSecret,
+          content: messageInput,
+          stealthAddress: stealthResult.stealthAddress,
+          ephemeralPubKey: stealthResult.ephemeralPubKey,
+          metadata: metadata,
         });
-        
-        setSendTxState({ 
-          status: 'confirmed', 
-          transactionId: result.transactionId 
+
+        setSendTxState({
+          status: "confirmed",
+          transactionId: result.transactionId,
         });
       } catch (error: any) {
-        setSendTxState({ 
-          status: 'failed', 
-          error: error?.message || 'Failed to send message' 
+        setSendTxState({
+          status: "failed",
+          error: error?.message || "Failed to send message",
         });
       }
     },
     onError: (error) => {
-      setSendTxState({ 
-        status: 'failed', 
-        error: error.message 
+      setSendTxState({
+        status: "failed",
+        error: error.message,
       });
-    }
+    },
   });
 
   // Handle recipient input change
@@ -149,10 +185,10 @@ export default function SendPage() {
     if (!validation.valid) {
       setRecipientInfo({
         address: input,
-        type: 'invalid',
+        type: "meta-address", // Default to meta-address for invalid input
         isRegistered: false,
         isLoading: false,
-        error: validation.error
+        error: validation.error,
       });
       return;
     }
@@ -161,18 +197,18 @@ export default function SendPage() {
       address: input,
       type: validation.type,
       isRegistered: false,
-      isLoading: true
+      isLoading: true,
     });
 
     // TODO: Implement registry lookup for ETH addresses and ENS
     // For now, only support direct meta-address input
-    if (validation.type === 'meta-address') {
+    if (validation.type === "meta-address") {
       setRecipientInfo({
         address: input,
         metaAddress: input,
-        type: 'meta-address',
+        type: "meta-address",
         isRegistered: true,
-        isLoading: false
+        isLoading: false,
       });
     }
   };
@@ -185,7 +221,7 @@ export default function SendPage() {
   // Handle send message
   const handleSendMessage = () => {
     if (!recipientInfo?.metaAddress) {
-      toast.error('Please enter a valid recipient');
+      toast.error("Please enter a valid recipient");
       return;
     }
 
@@ -201,11 +237,12 @@ export default function SendPage() {
   return (
     <div className="w-full">
       <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-white mb-4">
-              Send Anonymous Content
-            </h1>
-            <p className="text-lg text-gray-300 mb-6">
-          Send encrypted messages, files, or token tips anonymously using stealth addresses
+        <h1 className="text-4xl font-bold text-white mb-4">
+          Send Anonymous Content
+        </h1>
+        <p className="text-lg text-gray-300 mb-6">
+          Send encrypted messages, files, or token tips anonymously using
+          stealth addresses
         </p>
         <div className="flex justify-center gap-4 flex-wrap">
           <Badge variant="outline" icon={Shield} className="px-4 py-2">
@@ -226,8 +263,8 @@ export default function SendPage() {
           title="Connect Your Wallet"
           description="Connect your Hedera wallet to send anonymous content"
           action={{
-            label: isConnecting ? 'Connecting...' : 'Connect Wallet',
-            onClick: connect
+            label: isConnecting ? "Connecting..." : "Connect Wallet",
+            onClick: connect,
           }}
           className="max-w-md mx-auto"
         />
@@ -240,9 +277,16 @@ export default function SendPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <Tabs
+              value={activeTab}
+              onValueChange={setActiveTab}
+              className="w-full"
+            >
               <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="message" className="flex items-center gap-2">
+                <TabsTrigger
+                  value="message"
+                  className="flex items-center gap-2"
+                >
                   <MessageCircle className="h-4 w-4" />
                   Message
                 </TabsTrigger>
@@ -266,14 +310,26 @@ export default function SendPage() {
                     onChange={(e) => handleRecipientChange(e.target.value)}
                     placeholder="Enter stealth meta-address (st:eth:0x...), ETH address, or ENS name"
                     className="mt-1"
-                    validation={recipientInfo?.error ? 'error' : recipientInfo?.isRegistered ? 'success' : undefined}
+                    validation={
+                      recipientInfo?.error
+                        ? "error"
+                        : recipientInfo?.isRegistered
+                        ? "success"
+                        : undefined
+                    }
                     errorText={recipientInfo?.error}
-                    successText={recipientInfo?.isRegistered ? 'Recipient found' : undefined}
+                    successText={
+                      recipientInfo?.isRegistered
+                        ? "Recipient found"
+                        : undefined
+                    }
                   />
                   {recipientInfo?.isLoading && (
                     <div className="flex items-center gap-2 mt-2">
                       <LoadingSpinner size="sm" />
-                      <span className="text-sm text-gray-500">Looking up recipient...</span>
+                      <span className="text-sm text-gray-500">
+                        Looking up recipient...
+                      </span>
                     </div>
                   )}
                 </div>
@@ -300,9 +356,9 @@ export default function SendPage() {
                 <TabsContent value="file" className="space-y-4">
                   <div
                     className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                      isDragOver 
-                        ? 'border-primary bg-primary/5' 
-                        : 'border-gray-300 hover:border-gray-400'
+                      isDragOver
+                        ? "border-primary bg-primary/5"
+                        : "border-gray-300 hover:border-gray-400"
                     }`}
                     onDragOver={(e) => {
                       e.preventDefault();
@@ -319,7 +375,9 @@ export default function SendPage() {
                     {selectedFile ? (
                       <div className="space-y-2">
                         <FileText className="h-12 w-12 text-green-500 mx-auto" />
-                        <p className="font-medium text-white">{selectedFile.name}</p>
+                        <p className="font-medium text-white">
+                          {selectedFile.name}
+                        </p>
                         <p className="text-sm text-gray-500">
                           {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                         </p>
@@ -334,8 +392,12 @@ export default function SendPage() {
                     ) : (
                       <div className="space-y-2">
                         <Upload className="h-12 w-12 text-gray-400 mx-auto" />
-                        <p className="font-medium text-white">Drop your file here</p>
-                        <p className="text-sm text-gray-500">or click to browse</p>
+                        <p className="font-medium text-white">
+                          Drop your file here
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          or click to browse
+                        </p>
                         <Button variant="outline" size="sm">
                           Browse Files
                         </Button>
@@ -344,7 +406,9 @@ export default function SendPage() {
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600">
                     <Lock className="h-4 w-4" />
-                    <span>Files are encrypted with AES-256-GCM before sending</span>
+                    <span>
+                      Files are encrypted with AES-256-GCM before sending
+                    </span>
                   </div>
                 </TabsContent>
 
@@ -376,9 +440,13 @@ export default function SendPage() {
                     <div className="flex items-start gap-2">
                       <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
                       <div>
-                        <p className="text-sm font-medium text-yellow-800">Token Tips</p>
+                        <p className="text-sm font-medium text-yellow-800">
+                          Token Tips
+                        </p>
                         <p className="text-sm text-yellow-700">
-                          Token tips will be sent to a generated stealth address. The recipient can claim them using their private keys.
+                          Token tips will be sent to a generated stealth
+                          address. The recipient can claim them using their
+                          private keys.
                         </p>
                       </div>
                     </div>
@@ -388,38 +456,58 @@ export default function SendPage() {
                 {/* Send Button */}
                 <Button
                   onClick={handleSendMessage}
-                  disabled={!recipientInfo?.metaAddress || 
-                    (activeTab === 'message' && !messageInput.trim()) ||
-                    (activeTab === 'file' && !selectedFile) ||
-                    (activeTab === 'tip' && !tipAmount.trim()) ||
-                    sendMessageMutation.isPending}
+                  disabled={
+                    !recipientInfo?.metaAddress ||
+                    (activeTab === "message" && !messageInput.trim()) ||
+                    (activeTab === "file" && !selectedFile) ||
+                    (activeTab === "tip" && !tipAmount.trim()) ||
+                    sendMessageMutation.isPending
+                  }
                   className="w-full"
                   loading={sendMessageMutation.isPending}
                   loadingText="Sending..."
                 >
-                  Send {activeTab === 'message' ? 'Message' : activeTab === 'file' ? 'File' : 'Tip'} Anonymously
+                  Send{" "}
+                  {activeTab === "message"
+                    ? "Message"
+                    : activeTab === "file"
+                    ? "File"
+                    : "Tip"}{" "}
+                  Anonymously
                 </Button>
 
                 {/* Transaction Status */}
-                {sendTxState.status !== 'idle' && (
+                {sendTxState.status !== "idle" && (
                   <Card variant="outlined" className="p-4">
                     <div className="flex items-center gap-2 mb-2">
-                      <StatusBadge 
-                        status={sendTxState.status === 'confirmed' ? 'success' : 
-                                sendTxState.status === 'failed' ? 'error' : 'pending'} 
-                        text={sendTxState.status} 
+                      <StatusBadge
+                        status={
+                          sendTxState.status === "confirmed"
+                            ? "success"
+                            : sendTxState.status === "failed"
+                            ? "error"
+                            : "pending"
+                        }
+                        text={sendTxState.status}
                       />
                     </div>
                     {sendTxState.transactionId && (
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600">Transaction ID:</span>
+                        <span className="text-sm text-gray-600">
+                          Transaction ID:
+                        </span>
                         <code className="text-xs bg-gray-100 px-2 py-1 rounded">
                           {sendTxState.transactionId.slice(0, 10)}...
                         </code>
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => copyToClipboard(sendTxState.transactionId!, 'Transaction ID')}
+                          onClick={() =>
+                            copyToClipboard(
+                              sendTxState.transactionId!,
+                              "Transaction ID"
+                            )
+                          }
                         >
                           Copy
                         </Button>
@@ -434,7 +522,9 @@ export default function SendPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => copyToClipboard(sendTxState.topicId!, 'Topic ID')}
+                          onClick={() =>
+                            copyToClipboard(sendTxState.topicId!, "Topic ID")
+                          }
                         >
                           Copy
                         </Button>
