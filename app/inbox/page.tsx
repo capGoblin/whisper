@@ -142,7 +142,7 @@ export default function InboxPage() {
   };
 
   // Handle message actions
-  const handleMarkAsRead = (message: Message) => {
+  const handleMarkAsRead = (message: DecryptedMessage) => {
     setMessages((prev) =>
       prev.map((m) => (m === message ? { ...m, isRead: true } : m))
     );
