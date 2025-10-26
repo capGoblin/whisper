@@ -383,15 +383,8 @@ export default function InboxPage() {
 
                             <p className="text-sm text-gray-300 line-clamp-2 mb-2">
                               {message.type === "file"
-                                ? (() => {
-                                    try {
-                                      const metadata = JSON.parse(message.content);
-                                      return `📄 ${metadata.fileName} (${(metadata.size / 1024).toFixed(1)} KB)`;
-                                    } catch {
-                                      return message.content;
-                                    }
-                                  })()
-                                : message.content}
+                                ? "📄 Encrypted file - Click to view details"
+                                : "🔒 Encrypted message - Click to decrypt and view"}
                             </p>
 
                             <div className="flex items-center gap-4 text-xs text-gray-400">

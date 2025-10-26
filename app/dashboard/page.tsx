@@ -49,8 +49,7 @@ import {
   getTestKeys,
   clearTestKeys,
 } from "../../utils/pass-keys-fallback";
-import { scanMessages } from "../../utils/hedera";
-import { getRegistryStatusWithWalletConnect } from "../../utils/registry-metamask";
+import { scanMessages, getMetaAddressFromRegistry } from "../../utils/hedera";
 
 // Types
 import { UserKeys, StealthMetaAddress, DecryptedMessage } from "../../types";
@@ -101,10 +100,27 @@ export default function DashboardPage() {
 
       try {
         if (!sdk) {
-          throw new Error("WalletConnect SDK not available");
+          throw new Error("Hedera SDK not available");
         }
-        const status = await getRegistryStatusWithWalletConnect(sdk, accountId);
-        setUserRegistryStatus(status);
+        
+        // Check if the user's address has a registered meta-address
+        const metaAddress = await getMetaAddressFromRegistry(sdk, accountId);
+        
+        if (metaAddress) {
+          setUserRegistryStatus({
+            isRegistered: true,
+            metaAddress: metaAddress,
+            isLoading: false,
+            error: undefined,
+          });
+        } else {
+          setUserRegistryStatus({
+            isRegistered: false,
+            metaAddress: undefined,
+            isLoading: false,
+            error: undefined,
+          });
+        }
       } catch (error) {
         setUserRegistryStatus({
           isRegistered: false,

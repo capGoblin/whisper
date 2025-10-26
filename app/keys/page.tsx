@@ -48,9 +48,8 @@ import {
   storeTestKeys,
 } from "../../utils/pass-keys-fallback";
 import {
-  registerMetaAddressWithWalletConnect,
-  waitForTransactionConfirmationWithWalletConnect,
-} from "../../utils/registry-metamask";
+  registerMetaAddressToRegistry,
+} from "../../utils/hedera";
 
 // Types
 import { UserKeys, RegistryStatus, HederaTransactionState } from "../../types";
@@ -169,36 +168,24 @@ export default function KeysPage() {
       const addressString =
         typeof metaAddress === "string" ? metaAddress : metaAddress.formatted;
 
-      // Register using WalletConnect
+      // Register using Hedera SDK
       if (!sdk) {
-        throw new Error("WalletConnect SDK not available");
+        throw new Error("Hedera SDK not available");
       }
-      const result = await registerMetaAddressWithWalletConnect(
-        sdk,
-        addressString
-      );
+      
+      const result = await registerMetaAddressToRegistry(sdk, addressString);
 
       if (result.success) {
-        setRegisterTxState({ status: "pending", transactionId: result.hash });
-
-        // Wait for confirmation
-        const confirmed = await waitForTransactionConfirmationWithWalletConnect(
-          sdk,
-          result.hash
-        );
-
-        if (confirmed) {
-          setRegisterTxState({
-            status: "confirmed",
-            transactionId: result.hash,
-          });
-        } else {
-          setRegisterTxState({ status: "failed", error: "Transaction failed" });
-        }
+        setRegisterTxState({
+          status: "confirmed",
+          transactionId: result.transactionId,
+        });
+        setRegistryStatus("registered");
+        toast.success("Meta-address registered to registry!");
       } else {
         setRegisterTxState({
           status: "failed",
-          error: result.error || "Registration failed",
+          error: "Registration failed",
         });
       }
     } catch (error) {

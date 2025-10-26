@@ -237,8 +237,8 @@ export const downloadFileFromTopic = async (
     // Get ALL messages and concatenate them to reconstruct the complete file
     let allFileBytes = new Uint8Array(0);
 
-    // Sort messages by sequence number to ensure correct order
-    const sortedMessages = data.messages.sort((a, b) => a.sequence_number - b.sequence_number);
+        // Sort messages by sequence number to ensure correct order
+        const sortedMessages = data.messages.sort((a: any, b: any) => a.sequence_number - b.sequence_number);
 
     console.log(`Concatenating ${sortedMessages.length} message chunks...`);
 
@@ -269,6 +269,112 @@ export const downloadFileFromTopic = async (
     return blob;
   } catch (error) {
     console.error(`Error downloading file from topic ${topicId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Get stealth meta-address from ERC6538Registry contract via Hedera
+ * Queries the registry contract to get meta-address for a given address
+ */
+export const getMetaAddressFromRegistry = async (
+  sdk: HashinalsWalletConnectSDK,
+  registrantAddress: string,
+  schemeId: number = 1
+): Promise<string | null> => {
+  try {
+    console.log(`Querying registry for address: ${registrantAddress}`);
+
+    // Create contract call query for stealthMetaAddressOf function
+    // Function signature: stealthMetaAddressOf(address registrant, uint256 schemeId) returns (bytes)
+    const contractQuery = new ContractCallQuery()
+      .setContractId("0.0.7130323") // ERC6538Registry on Hedera Testnet
+      .setGas(50000)
+      .setFunction(
+        "stealthMetaAddressOf",
+        new ContractFunctionParameters()
+          .addAddress(registrantAddress)
+          .addUint256(schemeId)
+      );
+
+    // Execute the query using the SDK's executeTransaction method
+    // Note: ContractCallQuery is a Transaction type in Hedera SDK
+    const result = await sdk.executeTransaction(contractQuery);
+    
+    // Parse the bytes result
+    // The contract returns bytes, so we need to access the result properly
+    // Based on Hedera SDK documentation, we should use getBytes(0) for bytes return type
+    const metaAddressBytes = result.getBytes(0);
+    
+    if (!metaAddressBytes || metaAddressBytes.length === 0) {
+      console.log(`No meta-address registered for ${registrantAddress}`);
+      return null;
+    }
+
+    // Convert bytes to hex string
+    const metaAddressHex = '0x' + Buffer.from(metaAddressBytes).toString('hex');
+    
+    console.log(`Found meta-address: ${metaAddressHex}`);
+    
+    return metaAddressHex;
+  } catch (error) {
+    console.error(`Error querying registry for ${registrantAddress}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Register stealth meta-address to ERC6538Registry contract via Hedera
+ * Calls the registerKeys function on the registry contract
+ */
+export const registerMetaAddressToRegistry = async (
+  sdk: HashinalsWalletConnectSDK,
+  metaAddress: string,
+  schemeId: number = 1
+): Promise<{ transactionId: string; success: boolean }> => {
+  try {
+    if (!sdk) {
+      throw new Error("Hashinal WC SDK not initialized");
+    }
+
+    console.log("Registering meta-address to registry contract 0.0.7130323...");
+
+    // Get account info to ensure we're connected
+    const accountInfo = await sdk.getAccountInfo();
+    if (!accountInfo) {
+      throw new Error("No account connected");
+    }
+
+    console.log(`Connected account: ${accountInfo.accountId}`);
+
+    // Convert meta-address to bytes
+    const metaAddressBytes = new Uint8Array(Buffer.from(metaAddress.replace('0x', ''), 'hex'));
+
+    // Create contract execute transaction for the registerKeys function
+    // Function signature: registerKeys(uint256 schemeId, bytes calldata stealthMetaAddress)
+    const contractTx = new ContractExecuteTransaction()
+      .setContractId("0.0.7130323") // ERC6538Registry on Hedera Testnet
+      .setGas(100000)
+      .setTransactionValidDuration(120)
+      .setNodeAccountIds([new AccountId(3)])
+      .setFunction(
+        "registerKeys",
+        new ContractFunctionParameters()
+          .addUint256(schemeId)
+          .addBytes(metaAddressBytes)
+      );
+
+    // Execute the contract transaction
+    const receipt = await sdk.executeTransaction(contractTx);
+
+    console.log(`Meta-address registered to registry contract 0.0.7130323`);
+
+    return {
+      transactionId: receipt.status?.toString() || "unknown",
+      success: true,
+    };
+  } catch (error) {
+    console.error("Error registering meta-address to registry:", error);
     throw error;
   }
 };

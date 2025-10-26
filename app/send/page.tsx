@@ -32,6 +32,7 @@ import {
   Lock,
   Upload,
   AlertCircle,
+  CheckCircle,
 } from "lucide-react";
 
 // Utils
@@ -43,7 +44,7 @@ import {
 import { prepareMetadata, computeSharedSecret } from "../../utils/encryption";
 import { getUserKeys } from "../../utils/pass-keys-simple";
 import { getTestKeys } from "../../utils/pass-keys-fallback";
-import { sendMessage, sendFile } from "../../utils/hedera";
+import { sendMessage, sendFile, getMetaAddressFromRegistry } from "../../utils/hedera";
 
 // Types
 import { UserKeys, HederaTransactionState, RecipientInfo } from "../../types";
@@ -89,6 +90,24 @@ export default function SendPage() {
     status: "idle",
   });
 
+  // Recipient lookup state
+  const [showRecipientLookup, setShowRecipientLookup] = useState(false);
+  const [lookupAddress, setLookupAddress] = useState("");
+  const [lookupResult, setLookupResult] = useState<{
+    address: string;
+    metaAddress: string | null;
+    isLoading: boolean;
+    error?: string;
+  } | null>(null);
+
+  // Stealth address generation state
+  const [generatedStealthAddress, setGeneratedStealthAddress] = useState<{
+    stealthAddress: string;
+    ephemeralPubKey: string;
+    viewTag: string;
+  } | null>(null);
+  const [isGeneratingStealth, setIsGeneratingStealth] = useState(false);
+
   // Handle file selection
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -127,12 +146,14 @@ export default function SendPage() {
         throw new Error("User keys not available. Please generate keys first.");
       }
 
+      if (!generatedStealthAddress) {
+        throw new Error("Stealth address not generated. Please wait or try again.");
+      }
+
       setSendTxState({ status: "preparing" });
 
-      // Generate stealth address
-      const stealthResult = await generateStealthAddressOfficial(
-        recipientInfo.metaAddress
-      );
+      // Use pre-generated stealth address
+      const stealthResult = generatedStealthAddress;
 
       // Compute shared secret for encryption
       const sharedSecret = computeSharedSecret(
@@ -195,12 +216,14 @@ export default function SendPage() {
         throw new Error("User keys not available. Please generate keys first.");
       }
 
+      if (!generatedStealthAddress) {
+        throw new Error("Stealth address not generated. Please wait or try again.");
+      }
+
       setSendTxState({ status: "preparing" });
 
-      // Generate stealth address
-      const stealthResult = await generateStealthAddressOfficial(
-        recipientInfo.metaAddress
-      );
+      // Use pre-generated stealth address
+      const stealthResult = generatedStealthAddress;
 
       // Compute shared secret for encryption
       const sharedSecret = computeSharedSecret(
@@ -263,9 +286,75 @@ export default function SendPage() {
     },
   });
 
+  // Lookup meta-address mutation
+  const lookupMetaAddressMutation = useMutation({
+    mutationFn: async (address: string) => {
+      if (!sdk) {
+        throw new Error("SDK not initialized");
+      }
+
+      // Validate address format (should be 0x... format)
+      if (!address.match(/^0x[a-fA-F0-9]{40}$/)) {
+        throw new Error("Invalid Ethereum address format");
+      }
+
+      const metaAddress = await getMetaAddressFromRegistry(sdk, address);
+      
+      if (!metaAddress) {
+        throw new Error("No meta-address registered for this address");
+      }
+
+      return { address, metaAddress };
+    },
+    onSuccess: (data) => {
+      setLookupResult({
+        address: data.address,
+        metaAddress: data.metaAddress,
+        isLoading: false,
+      });
+      toast.success("Meta-address found!");
+    },
+    onError: (error: any) => {
+      setLookupResult({
+        address: lookupAddress,
+        metaAddress: null,
+        isLoading: false,
+        error: error.message,
+      });
+      toast.error(`Lookup failed: ${error.message}`);
+    },
+  });
+
+  // Generate stealth address for recipient
+  const generateStealthAddressForRecipient = async (metaAddress: string) => {
+    try {
+      setIsGeneratingStealth(true);
+      console.log("Generating stealth address for recipient:", metaAddress);
+      
+      const stealthResult = await generateStealthAddressOfficial(metaAddress);
+      
+      setGeneratedStealthAddress({
+        stealthAddress: stealthResult.stealthAddress,
+        ephemeralPubKey: stealthResult.ephemeralPubKey,
+        viewTag: stealthResult.viewTag,
+      });
+      
+      console.log("Stealth address generated:", stealthResult.stealthAddress);
+    } catch (error) {
+      console.error("Error generating stealth address:", error);
+      setGeneratedStealthAddress(null);
+      toast.error("Failed to generate stealth address for recipient");
+    } finally {
+      setIsGeneratingStealth(false);
+    }
+  };
+
   // Handle recipient input change
   const handleRecipientChange = async (input: string) => {
     setRecipientInput(input);
+    
+    // Clear previous stealth address
+    setGeneratedStealthAddress(null);
 
     if (!input.trim()) {
       setRecipientInfo(null);
@@ -301,6 +390,9 @@ export default function SendPage() {
         isRegistered: true,
         isLoading: false,
       });
+      
+      // Generate stealth address immediately when valid meta-address is entered
+      await generateStealthAddressForRecipient(input);
     }
   };
 
@@ -333,6 +425,111 @@ export default function SendPage() {
       }
       sendMessageMutation.mutate();
     }
+  };
+
+  // Recipient Lookup Modal
+  const RecipientLookupModal = () => {
+    if (!showRecipientLookup) return null;
+
+    return (
+      <div 
+        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+        onClick={() => {
+          setShowRecipientLookup(false);
+          setLookupResult(null);
+          setLookupAddress("");
+        }}
+      >
+        <Card 
+          className="max-w-lg w-full mx-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Lookup Recipient Meta-Address</CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowRecipientLookup(false);
+                  setLookupResult(null);
+                  setLookupAddress("");
+                }}
+              >
+                ✕
+              </Button>
+            </div>
+            <CardDescription>
+              Enter a public address to find their registered stealth meta-address
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Address Input */}
+            <div>
+              <Label htmlFor="lookup-address">Public Address</Label>
+              <Input
+                id="lookup-address"
+                value={lookupAddress}
+                onChange={(e) => setLookupAddress(e.target.value)}
+                placeholder="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+                className="mt-1"
+              />
+            </div>
+
+            {/* Lookup Button */}
+            <Button
+              onClick={() => lookupMetaAddressMutation.mutate(lookupAddress)}
+              disabled={!lookupAddress.trim() || lookupMetaAddressMutation.isPending}
+              loading={lookupMetaAddressMutation.isPending}
+              loadingText="Looking up..."
+              className="w-full"
+            >
+              Lookup Meta-Address
+            </Button>
+
+            {/* Lookup Result */}
+            {lookupResult && (
+              <div className="mt-4 p-4 bg-gray-800 rounded-lg space-y-3">
+                <div>
+                  <span className="text-sm text-gray-400">Address:</span>
+                  <p className="text-xs font-mono text-white break-all mt-1">
+                    {lookupResult.address}
+                  </p>
+                </div>
+
+                {lookupResult.metaAddress ? (
+                  <>
+                    <div>
+                      <span className="text-sm text-gray-400">Stealth Meta-Address:</span>
+                      <p className="text-xs font-mono text-white break-all mt-1">
+                        {lookupResult.metaAddress}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        setRecipientInput(lookupResult.metaAddress!);
+                        handleRecipientChange(lookupResult.metaAddress!);
+                        setShowRecipientLookup(false);
+                        setLookupResult(null);
+                        setLookupAddress("");
+                        toast.success("Meta-address added to recipient field");
+                      }}
+                      className="w-full"
+                    >
+                      Use This Meta-Address
+                    </Button>
+                  </>
+                ) : (
+                  <div className="text-sm text-red-400">
+                    {lookupResult.error || "No meta-address found"}
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
   };
 
   return (
@@ -400,12 +597,22 @@ export default function SendPage() {
               <div className="mt-6 space-y-6">
                 {/* Recipient Input */}
                 <div>
-                  <Label htmlFor="recipient">Recipient</Label>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label htmlFor="recipient">Recipient</Label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowRecipientLookup(true)}
+                      className="text-xs"
+                    >
+                      Lookup by Address
+                    </Button>
+                  </div>
                   <Input
                     id="recipient"
                     value={recipientInput}
                     onChange={(e) => handleRecipientChange(e.target.value)}
-                    placeholder="Enter stealth meta-address (st:eth:0x...), ETH address, or ENS name"
+                    placeholder="Enter stealth meta-address (st:eth:0x...) or click 'Lookup by Address'"
                     className="mt-1"
                     validation={
                       recipientInfo?.error
@@ -427,6 +634,27 @@ export default function SendPage() {
                       <span className="text-sm text-gray-500">
                         Looking up recipient...
                       </span>
+                    </div>
+                  )}
+
+                  {isGeneratingStealth && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <LoadingSpinner size="sm" />
+                      <span className="text-sm text-gray-500">
+                        Generating stealth address...
+                      </span>
+                    </div>
+                  )}
+
+                  {generatedStealthAddress && (
+                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-sm">
+                      <div className="flex items-center gap-2 text-green-700">
+                        <CheckCircle className="h-4 w-4" />
+                        <span className="font-medium">Stealth address ready</span>
+                      </div>
+                      <p className="text-xs text-green-600 mt-1 font-mono">
+                        {generatedStealthAddress.stealthAddress.slice(0, 20)}...
+                      </p>
                     </div>
                   )}
                 </div>
@@ -534,6 +762,7 @@ export default function SendPage() {
                     !recipientInfo?.metaAddress ||
                     (activeTab === "message" && !messageInput.trim()) ||
                     (activeTab === "file" && !selectedFile) ||
+                    !generatedStealthAddress ||
                     sendMessageMutation.isPending ||
                     sendFileMutation.isPending
                   }
@@ -615,6 +844,9 @@ export default function SendPage() {
           </CardContent>
         </Card>
       )}
+      
+      {/* Recipient Lookup Modal */}
+      <RecipientLookupModal />
     </div>
   );
 }
