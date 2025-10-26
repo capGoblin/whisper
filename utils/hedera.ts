@@ -12,7 +12,7 @@ import {
   ContractExecuteTransaction,
   ContractFunctionParameters,
 } from "@hashgraph/sdk";
-import { REGISTRY_ADDRESS } from "../constants/contracts";
+import { REGISTRY_ADDRESS, ANNOUNCE_CONTRACT_ADDRESS } from "../constants/contracts";
 
 /**
  * Scan for messages using Hashinal WC SDK
@@ -65,7 +65,7 @@ export const scanMessages = async (
 
 /**
  * Send message using Hashinal WC SDK
- * Based on the Hashinal WC implementation from the gist
+ * Calls the ERC5564Announcer contract to announce stealth message
  */
 export const sendMessage = async (
   sdk: HashinalsWalletConnectSDK,
@@ -82,17 +82,82 @@ export const sendMessage = async (
       throw new Error("Hashinal WC SDK not initialized");
     }
 
+    console.log("Announcing stealth message to contract 0.0.7130322...");
+
+    // Get account info to ensure we're connected and get account details
+    const accountInfo = await sdk.getAccountInfo();
+    if (!accountInfo) {
+      throw new Error("No account connected");
+    }
+
+    console.log(`Connected account: ${accountInfo.accountId}`);
+
+    // Create contract execute transaction for the announce function
+    const contractTx = new ContractExecuteTransaction()
+      .setContractId("0.0.7130322") // ERC5564Announcer on Hedera Testnet
+      .setGas(100000)
+      .setTransactionValidDuration(120) // Maximum allowed: 120 seconds
+      .setNodeAccountIds([new AccountId(3)]) // Required for transaction execution
+      .setFunction(
+        "announce",
+        new ContractFunctionParameters()
+          .addUint256(1) // schemeId = 1 (ERC-5564)
+          .addAddress(messageData.stealthAddress)
+          .addBytes(new Uint8Array(Buffer.from(messageData.ephemeralPubKey.replace('0x', ''), 'hex')))
+          .addBytes(new Uint8Array(Buffer.from(messageData.metadata.replace('0x', ''), 'hex')))
+      );
+
+    // Execute the contract transaction
+    const receipt = await sdk.executeTransaction(contractTx);
+
+    console.log(`Stealth message announced to contract 0.0.7130322`);
+
+    return {
+      transactionId: receipt.status?.toString() || "unknown",
+      success: true,
+    };
+  } catch (error) {
+    console.error("Error announcing stealth message:", error);
+    throw error;
+  }
+};
+
+/**
+ * Send file using Hashinal WC SDK with HCS topic creation
+ * Uploads file to Hedera topic and returns metadata for stealth message
+ */
+export const sendFile = async (
+  sdk: HashinalsWalletConnectSDK,
+  fileData: {
+    file: File;
+    recipient: string;
+    stealthAddress: string;
+    ephemeralPubKey: string;
+  }
+): Promise<{ 
+  transactionId: string; 
+  topicId: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  success: boolean 
+}> => {
+  try {
+    if (!sdk) {
+      throw new Error("Hashinal WC SDK not initialized");
+    }
+
     // Get account info to ensure we're connected
     const accountInfo = await sdk.getAccountInfo();
     if (!accountInfo) {
       throw new Error("No account connected");
     }
 
-    console.log("Sending message using Hashinal WC SDK with topic creation...");
+    console.log(`Uploading file: ${fileData.file.name} (${fileData.file.size} bytes)`);
 
-    // Create a new topic for this message
+    // Create a new topic for this file
     const createTopicTx = new TopicCreateTransaction()
-      .setTopicMemo(`Stealth message to ${messageData.stealthAddress}`)
+      .setTopicMemo(`Stealth file: ${fileData.file.name} to ${fileData.stealthAddress}`)
       .setAutoRenewAccountId(accountInfo.accountId)
       .setNodeAccountIds([new AccountId(3)]);
 
@@ -101,39 +166,109 @@ export const sendMessage = async (
     const topicId = createTopicReceipt.topicId;
 
     if (!topicId) {
-      throw new Error("Failed to create topic");
+      throw new Error("Failed to create topic for file");
     }
 
-    console.log(`Created topic: ${topicId}`);
+    console.log(`Created topic for file: ${topicId}`);
 
-    // Prepare the message content with stealth address metadata
-    const messageContent = {
-      type: "stealth-message",
-      content: messageData.content,
-      metadata: messageData.metadata,
-      stealthAddress: messageData.stealthAddress,
-      ephemeralPubKey: messageData.ephemeralPubKey,
-      recipient: messageData.recipient,
-      timestamp: Date.now(),
-    };
+    // Read file as ArrayBuffer
+    const fileArrayBuffer = await fileData.file.arrayBuffer();
+    const fileBytes = new Uint8Array(fileArrayBuffer);
 
-    // Submit message to the topic
-    const submitMessageTx = new TopicMessageSubmitTransaction()
+    console.log(`Uploading ${fileBytes.length} bytes to topic ${topicId}...`);
+
+    // Submit file data to the topic
+    const submitFileTx = new TopicMessageSubmitTransaction()
       .setTopicId(topicId)
-      .setMessage(JSON.stringify(messageContent))
+      .setMessage(fileBytes)
       .setNodeAccountIds([new AccountId(3)]);
 
-    // Execute message submission using Hashinal WC SDK
-    const submitMessageReceipt = await sdk.executeTransaction(submitMessageTx);
+    // Execute file submission using Hashinal WC SDK
+    const submitFileReceipt = await sdk.executeTransaction(submitFileTx);
 
-    console.log(`Message submitted to topic ${topicId}`);
+    console.log(`File uploaded to topic ${topicId}`);
 
     return {
-      transactionId: submitMessageReceipt.status?.toString() || "PPunknown",
+      transactionId: submitFileReceipt.status?.toString() || "unknown",
+      topicId: topicId.toString(),
+      fileName: fileData.file.name,
+      mimeType: fileData.file.type,
+      fileSize: fileData.file.size,
       success: true,
     };
   } catch (error) {
-    console.error("Error sending message with Hashinal WC SDK:", error);
+    console.error("Error uploading file with Hashinal WC SDK:", error);
+    throw error;
+  }
+};
+
+/**
+ * Download file from Hedera HCS topic using Mirror Node API
+ * Retrieves file bytes from topic and reconstructs the original file
+ */
+export const downloadFileFromTopic = async (
+  topicId: string,
+  fileName: string,
+  mimeType: string,
+  fileSize?: number
+): Promise<Blob> => {
+  try {
+    console.log(`Downloading file from topic: ${topicId}`);
+
+    // Query Mirror Node API for topic messages
+    const mirrorNodeUrl = `https://testnet.mirrornode.hedera.com/api/v1/topics/${topicId}/messages`;
+    
+    console.log(`Fetching from Mirror Node: ${mirrorNodeUrl}`);
+    
+    const response = await fetch(mirrorNodeUrl);
+    
+    if (!response.ok) {
+      throw new Error(`Mirror Node API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.messages || data.messages.length === 0) {
+      throw new Error(`No messages found in topic ${topicId}`);
+    }
+
+    console.log(`Found ${data.messages.length} message(s) in topic`);
+
+    // Get ALL messages and concatenate them to reconstruct the complete file
+    let allFileBytes = new Uint8Array(0);
+
+    // Sort messages by sequence number to ensure correct order
+    const sortedMessages = data.messages.sort((a, b) => a.sequence_number - b.sequence_number);
+
+    console.log(`Concatenating ${sortedMessages.length} message chunks...`);
+
+    for (const message of sortedMessages) {
+      // Decode base64 message content to get file bytes
+      const base64Content = message.message;
+      const binaryString = atob(base64Content);
+      const messageBytes = new Uint8Array(binaryString.length);
+      
+      for (let i = 0; i < binaryString.length; i++) {
+        messageBytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      // Concatenate with existing bytes
+      const newArray = new Uint8Array(allFileBytes.length + messageBytes.length);
+      newArray.set(allFileBytes);
+      newArray.set(messageBytes, allFileBytes.length);
+      allFileBytes = newArray;
+      
+      console.log(`Added ${messageBytes.length} bytes from sequence ${message.sequence_number}, total: ${allFileBytes.length} bytes`);
+    }
+
+    console.log(`Downloaded complete file: ${allFileBytes.length} bytes from topic (expected: ${fileSize || 'unknown'} bytes)`);
+
+    // Create blob with correct MIME type
+    const blob = new Blob([allFileBytes], { type: mimeType });
+    
+    return blob;
+  } catch (error) {
+    console.error(`Error downloading file from topic ${topicId}:`, error);
     throw error;
   }
 };

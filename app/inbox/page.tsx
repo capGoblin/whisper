@@ -24,7 +24,6 @@ import {
 import {
   MessageCircle,
   FileText,
-  DollarSign,
   Clock,
   Eye,
   Download,
@@ -40,7 +39,7 @@ import StatusBadge from "../components/shared/StatusBadge";
 import CopyButton from "../components/shared/CopyButton";
 
 // Utils
-import { scanMessages } from "../../utils/hedera";
+import { scanMessages, downloadFileFromTopic } from "../../utils/hedera";
 import { decryptMetadata } from "../../utils/encryption";
 import { getUserKeys } from "../../utils/pass-keys-simple";
 import { getTestKeys } from "../../utils/pass-keys-fallback";
@@ -54,7 +53,7 @@ export default function InboxPage() {
   // State
   const [userKeys, setUserKeys] = useState<UserKeys | null>(null);
   const [messages, setMessages] = useState<DecryptedMessage[]>([]);
-  const [filter, setFilter] = useState<"all" | "messages" | "files" | "tips">(
+  const [filter, setFilter] = useState<"all" | "messages" | "files">(
     "all"
   );
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "unread">(
@@ -107,7 +106,6 @@ export default function InboxPage() {
       if (filter === "all") return true;
       if (filter === "messages") return message.type === "message";
       if (filter === "files") return message.type === "file";
-      if (filter === "tips") return message.type === "tip";
       return true;
     })
     .filter((message) =>
@@ -130,8 +128,17 @@ export default function InboxPage() {
   };
 
   // Handle message selection
-  const handleMessageSelect = (message: Message) => {
-    setSelectedMessage(message);
+  const handleMessageSelect = async (message: DecryptedMessage) => {
+    const toastId = toast.loading("Decrypting message...");
+    
+    try {
+      // Simulate decryption delay (already decrypted, just for UX)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      setSelectedMessage(message);
+      toast.success("Message decrypted!", { id: toastId });
+    } catch (error) {
+      toast.error("Failed to decrypt message", { id: toastId });
+    }
   };
 
   // Handle message actions
@@ -141,26 +148,66 @@ export default function InboxPage() {
     );
   };
 
-  const handleDownloadFile = (message: Message) => {
-    if (message.type === "file" && message.fileData) {
-      const blob = new Blob([message.fileData], { type: message.mimeType });
+  const handleDownloadFile = async (message: DecryptedMessage) => {
+    // Check if it's a file message by type or content
+    const isFileMessage = message.type === "file" || (() => {
+      try {
+        const content = JSON.parse(message.content);
+        return content.type === "file";
+      } catch {
+        return false;
+      }
+    })();
+
+    if (!isFileMessage) {
+      toast.error("This message is not a file");
+      return;
+    }
+
+    try {
+      // Parse the message content to get file metadata
+      let fileMetadata;
+      try {
+        fileMetadata = JSON.parse(message.content);
+      } catch (e) {
+        toast.error("Failed to parse file metadata");
+        return;
+      }
+
+      // Validate metadata
+      if (!fileMetadata.topicId || !fileMetadata.fileName || !fileMetadata.mimeType) {
+        toast.error("Invalid file metadata");
+        return;
+      }
+
+      // Show loading toast
+      const toastId = toast.loading(`Downloading ${fileMetadata.fileName}...`);
+
+      // Download file from HCS topic
+      const blob = await downloadFileFromTopic(
+        fileMetadata.topicId,
+        fileMetadata.fileName,
+        fileMetadata.mimeType,
+        fileMetadata.size
+      );
+
+      // Trigger browser download
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = message.fileName || "download";
+      a.download = fileMetadata.fileName;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+
+      toast.success(`Downloaded ${fileMetadata.fileName}`, { id: toastId });
+    } catch (error: any) {
+      console.error("Error downloading file:", error);
+      toast.error(`Download failed: ${error.message}`);
     }
   };
 
-  const handleClaimTip = (message: Message) => {
-    if (message.type === "tip") {
-      toast.success("Tip claimed to your wallet!");
-      // TODO: Implement actual tip claiming logic
-    }
-  };
 
   return (
     <div className="w-full">
@@ -169,8 +216,7 @@ export default function InboxPage() {
           Your Anonymous Inbox
         </h1>
         <p className="text-lg text-gray-300 mb-6">
-          Receive and manage encrypted messages, files, and token tips sent to
-          your stealth address.
+          Receive and manage encrypted messages and files sent to your stealth address on Hedera Testnet.
         </p>
         <div className="flex justify-center gap-4 flex-wrap">
           <Badge variant="outline" icon={Shield} className="px-4 py-2">
@@ -178,9 +224,6 @@ export default function InboxPage() {
           </Badge>
           <Badge variant="outline" icon={Inbox} className="px-4 py-2">
             Anonymous Content
-          </Badge>
-          <Badge variant="outline" icon={MessageCircle} className="px-4 py-2">
-            Multi-Format
           </Badge>
         </div>
       </div>
@@ -238,7 +281,6 @@ export default function InboxPage() {
                       <SelectItem value="all">All</SelectItem>
                       <SelectItem value="messages">Messages</SelectItem>
                       <SelectItem value="files">Files</SelectItem>
-                      <SelectItem value="tips">Tips</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -282,7 +324,7 @@ export default function InboxPage() {
             <CardHeader>
               <CardTitle>Received Content</CardTitle>
               <CardDescription>
-                Messages, files, and tips sent to your stealth address
+                Messages and files sent to your stealth address on Hedera Testnet
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -310,32 +352,24 @@ export default function InboxPage() {
                         <div className="flex items-start gap-4">
                           <div
                             className={`p-2 rounded-lg bg-gray-800 ${
-                              message.type === "message"
-                                ? "text-blue-400"
-                                : message.type === "file"
+                              message.type === "file"
                                 ? "text-green-400"
-                                : "text-yellow-400"
+                                : "text-blue-400"
                             }`}
                           >
-                            {message.type === "message" && (
-                              <MessageCircle className="h-5 w-5" />
-                            )}
-                            {message.type === "file" && (
+                            {message.type === "file" ? (
                               <FileText className="h-5 w-5" />
-                            )}
-                            {message.type === "tip" && (
-                              <DollarSign className="h-5 w-5" />
+                            ) : (
+                              <MessageCircle className="h-5 w-5" />
                             )}
                           </div>
 
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-2">
                               <h3 className="font-medium text-white">
-                                {message.type === "message"
-                                  ? "Message from Anonymous"
-                                  : message.type === "file"
-                                  ? "File from Anonymous"
-                                  : "Tip Received"}
+                                {message.type === "file" 
+                                  ? "File from Anonymous" 
+                                  : "Message from Anonymous"}
                               </h3>
                               {!message.isRead && (
                                 <Badge variant="secondary" className="text-xs">
@@ -348,13 +382,16 @@ export default function InboxPage() {
                             </div>
 
                             <p className="text-sm text-gray-300 line-clamp-2 mb-2">
-                              {message.type === "message"
-                                ? message.content
-                                : message.type === "file"
-                                ? `📄 ${message.fileName || "encrypted file"}`
-                                : `💰 ${message.amount || "0"} ${
-                                    message.token || "ETH"
-                                  } received`}
+                              {message.type === "file"
+                                ? (() => {
+                                    try {
+                                      const metadata = JSON.parse(message.content);
+                                      return `📄 ${metadata.fileName} (${(metadata.size / 1024).toFixed(1)} KB)`;
+                                    } catch {
+                                      return message.content;
+                                    }
+                                  })()
+                                : message.content}
                             </p>
 
                             <div className="flex items-center gap-4 text-xs text-gray-400">
@@ -370,7 +407,14 @@ export default function InboxPage() {
                           </div>
 
                           <div className="flex items-center gap-2">
-                            {message.type === "file" && (
+                            {(message.type === "file" || (() => {
+                              try {
+                                const content = JSON.parse(message.content);
+                                return content.type === "file";
+                              } catch {
+                                return false;
+                              }
+                            })()) && (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -381,20 +425,6 @@ export default function InboxPage() {
                               >
                                 <Download className="h-4 w-4 mr-1" />
                                 Download
-                              </Button>
-                            )}
-
-                            {message.type === "tip" && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleClaimTip(message);
-                                }}
-                              >
-                                <DollarSign className="h-4 w-4 mr-1" />
-                                Claim
                               </Button>
                             )}
 
@@ -415,6 +445,146 @@ export default function InboxPage() {
                   ))}
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Message Detail Modal */}
+      {selectedMessage && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => setSelectedMessage(null)}
+        >
+          <Card 
+            className="max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  {selectedMessage.type === 'file' ? (
+                    <FileText className="h-5 w-5 text-green-400" />
+                  ) : (
+                    <MessageCircle className="h-5 w-5 text-blue-400" />
+                  )}
+                  Message Details
+                </CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedMessage(null)}
+                >
+                  ✕
+                </Button>
+              </div>
+              <CardDescription>
+                <Badge variant="outline" className="mt-2">{selectedMessage.type}</Badge>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Decrypted Content */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-400 mb-2">
+                  {selectedMessage.type === 'file' ? 'File Information:' : 'Decrypted Content:'}
+                </h3>
+                <div className="bg-gray-800 p-4 rounded-lg">
+                  {selectedMessage.type === 'file' ? (
+                    (() => {
+                      try {
+                        const metadata = JSON.parse(selectedMessage.content);
+                        return (
+                          <div className="space-y-2 text-white">
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">File Name:</span>
+                              <span className="font-mono">{metadata.fileName}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">File Type:</span>
+                              <span className="font-mono">{metadata.mimeType}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">File Size:</span>
+                              <span className="font-mono">{(metadata.size / 1024).toFixed(2)} KB</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Topic ID:</span>
+                              <span className="font-mono text-xs">{metadata.topicId}</span>
+                            </div>
+                          </div>
+                        );
+                      } catch {
+                        return <p className="text-white whitespace-pre-wrap break-words">{selectedMessage.content}</p>;
+                      }
+                    })()
+                  ) : (
+                    <p className="text-white whitespace-pre-wrap break-words">{selectedMessage.content}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Metadata */}
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Timestamp:</span>
+                  <span className="text-white">{new Date(selectedMessage.timestamp).toLocaleString()}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-gray-400">Stealth Address:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-white text-xs font-mono truncate max-w-xs">
+                      {selectedMessage.stealthAddress}
+                    </span>
+                    <CopyButton text={selectedMessage.stealthAddress} />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">From:</span>
+                  <span className="text-white">{selectedMessage.from}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Decryption Status:</span>
+                  <Badge variant={selectedMessage.decryptionSuccess ? "success" : "destructive"}>
+                    {selectedMessage.decryptionSuccess ? "✓ Decrypted" : "✗ Failed"}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-4 border-t border-gray-700">
+                {(selectedMessage.type === 'file' || (() => {
+                  try {
+                    const content = JSON.parse(selectedMessage.content);
+                    return content.type === "file";
+                  } catch {
+                    return false;
+                  }
+                })()) && (
+                  <Button onClick={() => handleDownloadFile(selectedMessage)}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download File
+                  </Button>
+                )}
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    handleMarkAsRead(selectedMessage);
+                    toast.success("Marked as read");
+                  }}
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  Mark as Read
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  onClick={() => {
+                    copyToClipboard(selectedMessage.content, "Message");
+                  }}
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copy
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

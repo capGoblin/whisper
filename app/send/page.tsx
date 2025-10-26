@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useWallet } from "@/providers/WalletProvider";
 import { useMutation } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -28,7 +28,6 @@ import StatusBadge from "../components/shared/StatusBadge";
 import {
   MessageCircle,
   FileText,
-  DollarSign,
   Shield,
   Lock,
   Upload,
@@ -44,7 +43,7 @@ import {
 import { prepareMetadata, computeSharedSecret } from "../../utils/encryption";
 import { getUserKeys } from "../../utils/pass-keys-simple";
 import { getTestKeys } from "../../utils/pass-keys-fallback";
-import { sendMessage } from "../../utils/hedera";
+import { sendMessage, sendFile } from "../../utils/hedera";
 
 // Types
 import { UserKeys, HederaTransactionState, RecipientInfo } from "../../types";
@@ -83,15 +82,20 @@ export default function SendPage() {
   // File upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-
-  // Token tip state
-  const [tipAmount, setTipAmount] = useState("");
-  const [tipToken, setTipToken] = useState("ETH");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Transaction state
   const [sendTxState, setSendTxState] = useState<HederaTransactionState>({
     status: "idle",
   });
+
+  // Handle file selection
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+    }
+  };
 
   // Handle transaction state updates
   useEffect(() => {
@@ -99,6 +103,10 @@ export default function SendPage() {
       toast.success("Message sent successfully!");
       setMessageInput("");
       setRecipientInput("");
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     } else if (sendTxState.status === "failed") {
       toast.error(`Send failed: ${sendTxState.error}`);
     }
@@ -172,6 +180,89 @@ export default function SendPage() {
     },
   });
 
+  // Send file mutation
+  const sendFileMutation = useMutation({
+    mutationFn: async () => {
+      if (!recipientInfo?.metaAddress || !selectedFile) {
+        throw new Error("Recipient and file are required");
+      }
+
+      if (!sdk) {
+        throw new Error("SDK not initialized");
+      }
+
+      if (!userKeys?.viewingPrivateKey) {
+        throw new Error("User keys not available. Please generate keys first.");
+      }
+
+      setSendTxState({ status: "preparing" });
+
+      // Generate stealth address
+      const stealthResult = await generateStealthAddressOfficial(
+        recipientInfo.metaAddress
+      );
+
+      // Compute shared secret for encryption
+      const sharedSecret = computeSharedSecret(
+        userKeys.viewingPrivateKey,
+        stealthResult.ephemeralPubKey
+      );
+
+      try {
+        // Step 1: Upload file to Hedera topic
+        console.log("Uploading file to Hedera topic...");
+        const fileResult = await sendFile(sdk, {
+          file: selectedFile,
+          recipient: recipientInfo.metaAddress,
+          stealthAddress: stealthResult.stealthAddress,
+          ephemeralPubKey: stealthResult.ephemeralPubKey,
+        });
+
+        console.log(`File uploaded to topic: ${fileResult.topicId}`);
+
+        // Step 2: Create file metadata for stealth message
+        const fileMetadata = {
+          type: "file",
+          topicId: fileResult.topicId,
+          fileName: fileResult.fileName,
+          mimeType: fileResult.mimeType,
+          size: fileResult.fileSize,
+          timestamp: Date.now(),
+        };
+
+        // Step 3: Encrypt file metadata
+        const metadata = await prepareMetadata(fileMetadata, sharedSecret);
+
+        // Step 4: Send file metadata as stealth message using existing sendMessage
+        console.log("Sending file metadata as stealth message...");
+        const result = await sendMessage(sdk, {
+          recipient: recipientInfo.metaAddress,
+          content: `File: ${fileResult.fileName}`,
+          stealthAddress: stealthResult.stealthAddress,
+          ephemeralPubKey: stealthResult.ephemeralPubKey,
+          metadata: metadata,
+        });
+
+        setSendTxState({
+          status: "confirmed",
+          transactionId: result.transactionId,
+          topicId: fileResult.topicId,
+        });
+      } catch (error: any) {
+        setSendTxState({
+          status: "failed",
+          error: error?.message || "Failed to send file",
+        });
+      }
+    },
+    onError: (error) => {
+      setSendTxState({
+        status: "failed",
+        error: error.message,
+      });
+    },
+  });
+
   // Handle recipient input change
   const handleRecipientChange = async (input: string) => {
     setRecipientInput(input);
@@ -225,13 +316,23 @@ export default function SendPage() {
       return;
     }
 
-    const messageValidation = validateMessageInput(messageInput);
-    if (!messageValidation.valid) {
-      toast.error(messageValidation.errors[0]);
-      return;
+    // Route to appropriate mutation based on active tab
+    if (activeTab === "file") {
+      // Validate file is selected
+      if (!selectedFile) {
+        toast.error("Please select a file to send");
+        return;
+      }
+      sendFileMutation.mutate();
+    } else {
+      // Validate message input
+      const messageValidation = validateMessageInput(messageInput);
+      if (!messageValidation.valid) {
+        toast.error(messageValidation.errors[0]);
+        return;
+      }
+      sendMessageMutation.mutate();
     }
-
-    sendMessageMutation.mutate();
   };
 
   return (
@@ -282,7 +383,7 @@ export default function SendPage() {
               onValueChange={setActiveTab}
               className="w-full"
             >
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger
                   value="message"
                   className="flex items-center gap-2"
@@ -293,10 +394,6 @@ export default function SendPage() {
                 <TabsTrigger value="file" className="flex items-center gap-2">
                   <FileText className="h-4 w-4" />
                   File
-                </TabsTrigger>
-                <TabsTrigger value="tip" className="flex items-center gap-2">
-                  <DollarSign className="h-4 w-4" />
-                  Token Tip
                 </TabsTrigger>
               </TabsList>
 
@@ -372,6 +469,15 @@ export default function SendPage() {
                       if (file) setSelectedFile(file);
                     }}
                   >
+                    {/* Hidden file input */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileSelect}
+                      accept="image/*,.pdf,.txt,.doc,.docx"
+                      className="hidden"
+                    />
+                    
                     {selectedFile ? (
                       <div className="space-y-2">
                         <FileText className="h-12 w-12 text-green-500 mx-auto" />
@@ -384,7 +490,12 @@ export default function SendPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setSelectedFile(null)}
+                          onClick={() => {
+                            setSelectedFile(null);
+                            if (fileInputRef.current) {
+                              fileInputRef.current.value = "";
+                            }
+                          }}
                         >
                           Remove File
                         </Button>
@@ -398,7 +509,11 @@ export default function SendPage() {
                         <p className="text-sm text-gray-500">
                           or click to browse
                         </p>
-                        <Button variant="outline" size="sm">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
                           Browse Files
                         </Button>
                       </div>
@@ -412,47 +527,6 @@ export default function SendPage() {
                   </div>
                 </TabsContent>
 
-                {/* Token Tip Tab */}
-                <TabsContent value="tip" className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="tip-amount">Amount</Label>
-                      <Input
-                        id="tip-amount"
-                        type="number"
-                        value={tipAmount}
-                        onChange={(e) => setTipAmount(e.target.value)}
-                        placeholder="0.0"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="tip-token">Token</Label>
-                      <Input
-                        id="tip-token"
-                        value={tipToken}
-                        onChange={(e) => setTipToken(e.target.value)}
-                        className="mt-1"
-                      />
-                    </div>
-                  </div>
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-medium text-yellow-800">
-                          Token Tips
-                        </p>
-                        <p className="text-sm text-yellow-700">
-                          Token tips will be sent to a generated stealth
-                          address. The recipient can claim them using their
-                          private keys.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-
                 {/* Send Button */}
                 <Button
                   onClick={handleSendMessage}
@@ -460,19 +534,23 @@ export default function SendPage() {
                     !recipientInfo?.metaAddress ||
                     (activeTab === "message" && !messageInput.trim()) ||
                     (activeTab === "file" && !selectedFile) ||
-                    (activeTab === "tip" && !tipAmount.trim()) ||
-                    sendMessageMutation.isPending
+                    sendMessageMutation.isPending ||
+                    sendFileMutation.isPending
                   }
                   className="w-full"
-                  loading={sendMessageMutation.isPending}
-                  loadingText="Sending..."
+                  loading={sendMessageMutation.isPending || sendFileMutation.isPending}
+                  loadingText={
+                    activeTab === "file" 
+                      ? (sendFileMutation.isPending ? "Uploading file..." : "Sending...") 
+                      : "Sending..."
+                  }
                 >
                   Send{" "}
                   {activeTab === "message"
                     ? "Message"
                     : activeTab === "file"
                     ? "File"
-                    : "Tip"}{" "}
+                    : ""}{" "}
                   Anonymously
                 </Button>
 

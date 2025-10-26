@@ -10,24 +10,48 @@ import {
   VALID_SCHEME_ID
 } from '@scopelift/stealth-address-sdk';
 import { createPublicClient, http } from 'viem';
-import { baseSepolia } from 'viem/chains';
+import { baseSepolia, hederaTestnet } from 'viem/chains';
 import { UserKeys, StealthMetaAddress, Message } from '../types';
 import { ANNOUNCE_CONTRACT_ADDRESS } from '../constants/contracts';
 import { computeSharedSecret, decryptMetadata } from './encryption';
 
-// Base Sepolia configuration
-const CHAIN_ID = 84532; // Base Sepolia
-const RPC_URL = 'https://84532.rpc.thirdweb.com/0146d9ba634727cd97f136a39c52afe1';
+// Hedera Testnet configuration
+const CHAIN_ID = 296; // Hedera Testnet
+const RPC_URL = 'https://testnet.hashio.io/api'; // Hedera Testnet JSON-RPC Relay
+
+// Define Hedera Testnet chain configuration for Viem
+// const hederaTestnet = {
+//   id: 296,
+//   name: 'Hedera Testnet',
+//   network: 'hedera-testnet',
+//   nativeCurrency: {
+//     name: 'HBAR',
+//     symbol: 'HBAR',
+//     decimals: 18,
+//   },
+//   rpcUrls: {
+//     default: { http: [RPC_URL] },
+//     public: { http: [RPC_URL] },
+//   },
+//   blockExplorers: {
+//     default: {
+//       name: 'HashScan',
+//       url: 'https://hashscan.io/testnet',
+//     },
+//   },
+// };
 
 // Initialize stealth client (for stealth address operations)
-const stealthClient = createStealthClient({
-  chainId: CHAIN_ID,
-  rpcUrl: RPC_URL,
-});
+// Note: Hedera Testnet (296) is not in the SDK's VALID_CHAIN_IDS, but we don't actually use this client
+// All operations use publicClient instead
+// const stealthClient = createStealthClient({
+//   chainId: CHAIN_ID,
+//   rpcUrl: RPC_URL,
+// });
 
 // Initialize Viem public client (for blockchain operations like getBlockNumber)
 const publicClient = createPublicClient({
-  chain: baseSepolia,
+  chain: hederaTestnet,
   transport: http(RPC_URL),
 });
 
@@ -232,17 +256,31 @@ export const scanForMessagesOfficial = async (
         );
         
         if (decryptedContent) {
-          // Determine message type based on content
-          let messageType: 'message' | 'file' | 'tip' = 'message';
-          let displayContent = typeof decryptedContent === 'string' ? decryptedContent : JSON.stringify(decryptedContent);
+          // Determine message type based on content (only message or file for Hedera Testnet)
+          let messageType: 'message' | 'file' = 'message';
+          let displayContent: string;
           
-          // Check if it's a JSON object (file or tip)
+          // Handle object with text field (standard message structure from Send page)
           if (typeof decryptedContent === 'object' && decryptedContent !== null) {
+            // Check for explicit type field first (only file type supported)
             if ('type' in decryptedContent && decryptedContent.type === 'file') {
               messageType = 'file';
-            } else if ('type' in decryptedContent && decryptedContent.type === 'tip') {
-              messageType = 'tip';
+              // For file messages, keep the full JSON metadata as content
+              displayContent = JSON.stringify(decryptedContent);
+            } else {
+              // For regular messages, extract text field if it exists
+              if ('text' in decryptedContent) {
+                displayContent = decryptedContent.text as string;
+              } else if ('content' in decryptedContent && typeof decryptedContent.content === 'string') {
+                // Fallback to content field
+                displayContent = decryptedContent.content;
+              } else {
+                displayContent = JSON.stringify(decryptedContent);
+              }
             }
+          } else {
+            // Handle plain string messages
+            displayContent = decryptedContent as string;
           }
           
           messages.push({

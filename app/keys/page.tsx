@@ -64,6 +64,7 @@ export default function KeysPage() {
   const [registryStatus, setRegistryStatus] =
     useState<RegistryStatus>("not-registered");
   const [showPrivateKeys, setShowPrivateKeys] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [registerTxState, setRegisterTxState] =
     useState<HederaTransactionState>({ status: "idle" });
 
@@ -124,6 +125,25 @@ export default function KeysPage() {
       toast.error(`Registration failed: ${registerTxState.error}`);
     }
   }, [registerTxState]);
+
+  // Handle reset keys
+  const handleResetKeys = () => {
+    setShowResetConfirm(true);
+  };
+
+  const confirmResetKeys = () => {
+    // Clear existing keys from localStorage
+    localStorage.removeItem('userKeys');
+    localStorage.removeItem('testKeys');
+    
+    // Reset state
+    setUserKeys(null);
+    setMetaAddress(null);
+    setRegisterTxState({ status: "idle" });
+    setShowResetConfirm(false);
+    
+    toast.success("Keys reset successfully. You can now generate new keys.");
+  };
 
   // Handle generate keys
   const handleGenerateKeys = () => {
@@ -479,6 +499,14 @@ export default function KeysPage() {
                     <Download className="h-4 w-4 mr-2" />
                     Export Keys
                   </Button>
+                  <Button 
+                    variant="destructive" 
+                    onClick={handleResetKeys}
+                    className="ml-auto"
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Reset Keys
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -543,6 +571,18 @@ export default function KeysPage() {
           </Card>
         </div>
       )}
+
+      {/* Reset Keys Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showResetConfirm}
+        onClose={() => setShowResetConfirm(false)}
+        onConfirm={confirmResetKeys}
+        title="Reset Keys"
+        description="Are you sure you want to reset your keys? This will permanently delete your current stealth keys and you'll need to generate new ones. Any messages sent to your current stealth address will be lost."
+        confirmText="Reset Keys"
+        cancelText="Cancel"
+        variant="destructive"
+      />
     </div>
   );
 }

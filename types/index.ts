@@ -18,7 +18,7 @@ export interface Message {
   timestamp: number;
   stealthAddress: string;
   decryptionSuccess?: boolean; // Whether the message was successfully decrypted
-  type?: 'message' | 'file' | 'tip'; // Type of message content
+  type?: 'message' | 'file'; // Type of message content (Hedera Testnet)
 }
 
 export interface StealthAddressResult {
