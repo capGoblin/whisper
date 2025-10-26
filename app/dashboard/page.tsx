@@ -66,7 +66,12 @@ export default function DashboardPage() {
   const [isScanning, setIsScanning] = useState(false);
 
   // Registry state
-  const [userRegistryStatus, setUserRegistryStatus] = useState({
+  const [userRegistryStatus, setUserRegistryStatus] = useState<{
+    isRegistered: boolean;
+    metaAddress: string | undefined;
+    isLoading: boolean;
+    error: string | undefined;
+  }>({
     isRegistered: false,
     metaAddress: undefined,
     isLoading: false,
