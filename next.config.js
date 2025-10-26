@@ -45,7 +45,6 @@ const nextConfig = {
   transpilePackages: [
     "@hashgraphonline/hashinal-wc",
     "@hashgraph/sdk",
-    "@scopelift/stealth-address-sdk",
   ],
 };
 
