@@ -42,9 +42,15 @@ const nextConfig = {
   experimental: {
     esmExternals: "loose",
   },
+  typescript: {
+    ignoreBuildErrors: false,
+  },
   transpilePackages: [
     "@hashgraphonline/hashinal-wc",
     "@hashgraph/sdk",
+    "@noble/curves",
+    "@noble/secp256k1",
+    "@scopelift/stealth-address-sdk",
   ],
 };
 
