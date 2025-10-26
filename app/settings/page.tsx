@@ -384,13 +384,13 @@ export default function SettingsPage() {
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => {
                   // TODO: Implement export data functionality
-                  toast.info('Export data feature coming soon!');
+                  toast('Export data feature coming soon!');
                 }}>
                   Export Data
                 </Button>
                 <Button variant="outline" onClick={() => {
                   // TODO: Implement clear data functionality
-                  toast.info('Clear data feature coming soon!');
+                  toast('Clear data feature coming soon!');
                 }}>
                   Clear Local Data
                 </Button>

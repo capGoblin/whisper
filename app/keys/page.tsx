@@ -122,7 +122,11 @@ export default function KeysPage() {
   // Handle registration transaction states
   useEffect(() => {
     if (registerTxState.status === "confirmed") {
-      setRegistryStatus("registered");
+      setRegistryStatus({
+        isRegistered: true,
+        isLoading: false,
+        error: null
+      });
       toast.success("Meta address registered successfully!");
     } else if (registerTxState.status === "failed") {
       toast.error(`Registration failed: ${registerTxState.error}`);
@@ -141,7 +145,7 @@ export default function KeysPage() {
     
     // Reset state
     setUserKeys(null);
-    setMetaAddress(null);
+    setMetaAddress("");
     setRegisterTxState({ status: "idle" });
     setShowResetConfirm(false);
     
@@ -168,9 +172,8 @@ export default function KeysPage() {
     try {
       setRegisterTxState({ status: "preparing" });
 
-      // Ensure we have a string, not an object
-      const addressString =
-        typeof metaAddress === "string" ? metaAddress : metaAddress.formatted;
+      // Use the meta address string directly
+      const addressString = metaAddress;
 
       // Register using Hedera SDK
       if (!sdk) {
@@ -184,7 +187,11 @@ export default function KeysPage() {
           status: "confirmed",
           transactionId: result.transactionId,
         });
-        setRegistryStatus("registered");
+        setRegistryStatus({
+          isRegistered: true,
+          isLoading: false,
+          error: null
+        });
         toast.success("Meta-address registered to registry!");
       } else {
         setRegisterTxState({
@@ -288,23 +295,17 @@ export default function KeysPage() {
                   <StatusBadge
                     status={userKeys ? "success" : "warning"}
                     text={userKeys ? "Keys Generated" : "Keys Not Generated"}
-                    icon={userKeys ? CheckCircle : AlertTriangle}
                   />
                 </div>
                 <div className="flex items-center gap-3">
                   <StatusBadge
                     status={
-                      registryStatus === "registered" ? "success" : "warning"
+                      registryStatus.isRegistered ? "success" : "warning"
                     }
                     text={
-                      registryStatus === "registered"
+                      registryStatus.isRegistered
                         ? "Registered to Registry"
                         : "Not Registered"
-                    }
-                    icon={
-                      registryStatus === "registered"
-                        ? CheckCircle
-                        : AlertTriangle
                     }
                   />
                 </div>
@@ -331,7 +332,6 @@ export default function KeysPage() {
                       ? "Generating..."
                       : "Generate Stealth Keys",
                     onClick: handleGenerateKeys,
-                    loading: generateKeysMutation.isPending,
                   }}
                   className="py-6"
                 />
@@ -351,20 +351,12 @@ export default function KeysPage() {
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-2">
                   <Input
-                    value={
-                      typeof metaAddress === "string"
-                        ? metaAddress
-                        : metaAddress?.formatted || ""
-                    }
+                    value={metaAddress}
                     readOnly
                     className="font-mono text-sm"
                   />
                   <CopyButton
-                    text={
-                      typeof metaAddress === "string"
-                        ? metaAddress
-                        : metaAddress?.formatted || ""
-                    }
+                    text={metaAddress}
                     label="Meta-address"
                     size="sm"
                   />
@@ -375,7 +367,7 @@ export default function KeysPage() {
                     variant="outline"
                     onClick={() => {
                       // TODO: Implement QR code generation
-                      toast.info("QR code feature coming soon!");
+                      toast("QR code feature coming soon!");
                     }}
                   >
                     <QrCode className="h-4 w-4 mr-2" />
@@ -385,7 +377,7 @@ export default function KeysPage() {
                     variant="outline"
                     onClick={() => {
                       // TODO: Implement sharing functionality
-                      toast.info("Share feature coming soon!");
+                      toast("Share feature coming soon!");
                     }}
                   >
                     <ExternalLink className="h-4 w-4 mr-2" />
@@ -504,7 +496,7 @@ export default function KeysPage() {
           )}
 
           {/* Registry Registration */}
-          {metaAddress && registryStatus !== "registered" && (
+          {metaAddress && !registryStatus.isRegistered && (
             <Card>
               <CardHeader>
                 <CardTitle>Registry Registration</CardTitle>
