@@ -7,7 +7,7 @@ interface CopyButtonProps {
   text: string;
   label?: string;
   variant?: 'default' | 'outline' | 'ghost';
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'default' | 'lg' | 'icon' | 'xs';
   className?: string;
   showText?: boolean;
 }
@@ -16,7 +16,7 @@ export default function CopyButton({
   text,
   label = 'Copy',
   variant = 'outline',
-  size = 'sm',
+  size = 'default',
   className = '',
   showText = true
 }: CopyButtonProps) {

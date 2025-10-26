@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { useNetwork } from 'wagmi';
+import { useChainId, useSwitchChain } from 'wagmi';
 import { baseSepolia } from 'wagmi/chains';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
@@ -11,10 +11,12 @@ import { Label } from '../../components/ui/label';
 import { Switch } from '../../components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Settings, Bell, Shield, Palette, Database, Info } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export default function SettingsPage() {
   const { authenticated, login, logout } = usePrivy();
-  const { chain, switchChain } = useNetwork();
+  const chainId = useChainId();
+  const { switchChain } = useSwitchChain();
   
   // Settings state
   const [notifications, setNotifications] = useState({
@@ -92,15 +94,15 @@ export default function SettingsPage() {
                 <div>
                   <Label>Current Network</Label>
                   <p className="text-sm text-gray-600">
-                    {chain?.name || 'Not connected'} ({chain?.id || 'N/A'})
+                    {chainId === baseSepolia.id ? 'Base Sepolia' : 'Not connected'} ({chainId || 'N/A'})
                   </p>
                 </div>
                 <Button
                   variant="outline"
                   onClick={handleSwitchChain}
-                  disabled={chain?.id === baseSepolia.id}
+                  disabled={chainId === baseSepolia.id}
                 >
-                  {chain?.id === baseSepolia.id ? 'Connected' : 'Switch to Base Sepolia'}
+                  {chainId === baseSepolia.id ? 'Connected' : 'Switch to Base Sepolia'}
                 </Button>
               </div>
               
