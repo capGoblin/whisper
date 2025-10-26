@@ -12,6 +12,7 @@
   "dependencies": {
     "@hashgraph/sdk": "^2.75.0",
     "@hashgraphonline/hashinal-wc": "^1.0.119",
+    "@noble/secp256k1": "^3.0.0",
     "@privy-io/wagmi": "^2.0.1",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.1",
