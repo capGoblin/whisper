@@ -61,7 +61,11 @@ export default function KeysPage() {
   const [userKeys, setUserKeys] = useState<UserKeys | null>(null);
   const [metaAddress, setMetaAddress] = useState<string>("");
   const [registryStatus, setRegistryStatus] =
-    useState<RegistryStatus>("not-registered");
+    useState<RegistryStatus>({
+      isRegistered: false,
+      isLoading: false,
+      error: null
+    });
   const [showPrivateKeys, setShowPrivateKeys] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [registerTxState, setRegisterTxState] =
