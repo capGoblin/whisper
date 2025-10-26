@@ -60,6 +60,7 @@ export interface DecryptedMessage extends Message {
   decryptionSuccess: boolean;
   sharedSecret?: string;
   viewTag?: string;
+  isRead?: boolean; // Track if message has been read
 }
 
 export interface TransactionState {

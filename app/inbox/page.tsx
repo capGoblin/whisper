@@ -114,7 +114,7 @@ export default function InboxPage() {
     .sort((a, b) => {
       if (sortBy === "newest") return b.timestamp - a.timestamp;
       if (sortBy === "oldest") return a.timestamp - b.timestamp;
-      if (sortBy === "unread") return a.isRead ? 1 : -1;
+      if (sortBy === "unread") return (a.isRead ?? false) ? 1 : -1;
       return 0;
     });
 
