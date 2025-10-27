@@ -121,6 +121,12 @@ export interface HederaTransactionState {
   topicId?: string;
   error?: string;
   blockNumber?: number;
+  // For file uploads - track multiple transaction IDs
+  fileUploadTransactions?: {
+    topicCreationTxId?: string;
+    fileUploadTxId?: string;
+    stealthAnnouncementTxId?: string;
+  };
 }
 
 export interface HederaTransactionResult {

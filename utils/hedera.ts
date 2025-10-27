@@ -140,7 +140,12 @@ export const sendFile = async (
   fileName: string;
   mimeType: string;
   fileSize: number;
-  success: boolean 
+  success: boolean;
+  // Return all transaction IDs for file upload process
+  fileUploadTransactions: {
+    topicCreationTxId: string;
+    fileUploadTxId: string;
+  };
 }> => {
   try {
     if (!sdk) {
@@ -164,12 +169,13 @@ export const sendFile = async (
     // Execute topic creation using Hashinal WC SDK
     const createTopicReceipt = await sdk.executeTransaction(createTopicTx);
     const topicId = createTopicReceipt.topicId;
+    const topicCreationTxId = createTopicReceipt.status?.toString() || "unknown";
 
     if (!topicId) {
       throw new Error("Failed to create topic for file");
     }
 
-    console.log(`Created topic for file: ${topicId}`);
+    console.log(`Created topic for file: ${topicId} (Tx: ${topicCreationTxId})`);
 
     // Read file as ArrayBuffer
     const fileArrayBuffer = await fileData.file.arrayBuffer();
@@ -185,16 +191,21 @@ export const sendFile = async (
 
     // Execute file submission using Hashinal WC SDK
     const submitFileReceipt = await sdk.executeTransaction(submitFileTx);
+    const fileUploadTxId = submitFileReceipt.status?.toString() || "unknown";
 
-    console.log(`File uploaded to topic ${topicId}`);
+    console.log(`File uploaded to topic ${topicId} (Tx: ${fileUploadTxId})`);
 
     return {
-      transactionId: submitFileReceipt.status?.toString() || "unknown",
+      transactionId: fileUploadTxId, // Keep the last transaction ID for backward compatibility
       topicId: topicId.toString(),
       fileName: fileData.file.name,
       mimeType: fileData.file.type,
       fileSize: fileData.file.size,
       success: true,
+      fileUploadTransactions: {
+        topicCreationTxId,
+        fileUploadTxId,
+      },
     };
   } catch (error) {
     console.error("Error uploading file with Hashinal WC SDK:", error);

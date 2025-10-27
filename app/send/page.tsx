@@ -266,10 +266,17 @@ export default function SendPage() {
           metadata: metadata,
         });
 
+        console.log(`Stealth announcement completed (Tx: ${result.transactionId})`);
+
         setSendTxState({
           status: "confirmed",
-          transactionId: result.transactionId,
+          transactionId: result.transactionId, // Main transaction ID (stealth announcement)
           topicId: fileResult.topicId,
+          fileUploadTransactions: {
+            topicCreationTxId: fileResult.fileUploadTransactions.topicCreationTxId,
+            fileUploadTxId: fileResult.fileUploadTransactions.fileUploadTxId,
+            stealthAnnouncementTxId: result.transactionId,
+          },
         });
       } catch (error: any) {
         setSendTxState({
