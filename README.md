@@ -16,7 +16,7 @@
 - **Telegram**: Centralized, metadata collection, government backdoors
 - **WhatsApp**: Owned by Meta, data sharing, surveillance
 - **Email**: Completely transparent, stored forever, easily intercepted
-- **Blockchain**: All transactions public, addresses linkable, permanent records
+- **Blockchain**: All transactions public, addresses linkable, permanent record
 
 ### The Real Cost
 - **Journalists** can't protect sources
