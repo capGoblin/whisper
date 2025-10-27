@@ -2,8 +2,6 @@
 
 import React, { useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { useChainId, useSwitchChain } from 'wagmi';
-import { baseSepolia } from 'wagmi/chains';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
@@ -15,8 +13,6 @@ import { toast } from 'react-hot-toast';
 
 export default function SettingsPage() {
   const { authenticated, login, logout } = usePrivy();
-  const chainId = useChainId();
-  const { switchChain } = useSwitchChain();
   
   // Settings state
   const [notifications, setNotifications] = useState({
@@ -45,13 +41,6 @@ export default function SettingsPage() {
     maxRetries: 3
   });
 
-  const handleSwitchChain = async () => {
-    try {
-      await switchChain({ chainId: baseSepolia.id });
-    } catch (error) {
-      console.error('Failed to switch chain:', error);
-    }
-  };
 
   return (
     <div className="w-full">
@@ -78,47 +67,6 @@ export default function SettingsPage() {
         </Card>
       ) : (
         <div className="space-y-6">
-          {/* Network Settings */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="h-5 w-5" />
-                Network Settings
-              </CardTitle>
-              <CardDescription>
-                Configure your blockchain network preferences
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Current Network</Label>
-                  <p className="text-sm text-gray-600">
-                    {chainId === baseSepolia.id ? 'Base Sepolia' : 'Not connected'} ({chainId || 'N/A'})
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={handleSwitchChain}
-                  disabled={chainId === baseSepolia.id}
-                >
-                  {chainId === baseSepolia.id ? 'Connected' : 'Switch to Base Sepolia'}
-                </Button>
-              </div>
-              
-              <div>
-                <Label htmlFor="rpc-url">Custom RPC URL</Label>
-                <Input
-                  id="rpc-url"
-                  value={advanced.rpcUrl}
-                  onChange={(e) => setAdvanced(prev => ({ ...prev, rpcUrl: e.target.value }))}
-                  placeholder="Enter custom RPC URL"
-                  className="mt-1"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Notifications */}
           <Card>
             <CardHeader>
